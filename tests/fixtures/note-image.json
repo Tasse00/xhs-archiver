@@ -1,0 +1,46 @@
+{
+  "noteId": "6a030b860000000036000201",
+  "type": "normal",
+  "title": "听劝改造第四天，学一下许光汉优衣库穿搭",
+  "desc": "夏天男生这样穿真的很清爽",
+  "time": 1778584454000,
+  "lastUpdateTime": 1778584454000,
+  "ipLocation": "广东",
+  "xsecToken": "ABh2GRDZh1yjAppoQSdDibx1z_wrzdWQFdsIb8JfpUJlU=",
+  "user": {
+    "userId": "5b1f8e0c11be103d0f4d2b7a",
+    "nickname": "不正",
+    "avatar": "https://sns-avatar-qc.xhscdn.com/avatar/abc.jpg",
+    "xsecToken": "AB-user-token"
+  },
+  "interactInfo": {
+    "likedCount": "1236",
+    "collectedCount": "220",
+    "commentCount": "3272",
+    "shareCount": "2383"
+  },
+  "imageList": [
+    {
+      "fileId": "notes_pre_post/1040g3k83202lbd8f48005qcgi63ocap3qtle3do",
+      "width": 3106,
+      "height": 4096,
+      "livePhoto": false,
+      "url": "",
+      "urlPre": "http://sns-webpic-qc.xhscdn.com/pre.webp",
+      "urlDefault": "http://sns-webpic-qc.xhscdn.com/dft.webp",
+      "stream": {},
+      "infoList": [
+        { "imageScene": "WB_PRV", "url": "http://sns-webpic-qc.xhscdn.com/pre.webp" },
+        { "imageScene": "WB_DFT", "url": "http://sns-webpic-qc.xhscdn.com/dft.webp" }
+      ]
+    }
+  ],
+  "tagList": [
+    { "name": "真听劝改造", "type": "topic" },
+    { "name": "听劝改造自己", "type": "topic" },
+    { "name": "找出自我穿搭风格", "type": "topic" },
+    { "name": "穿搭改造", "type": "topic" },
+    { "name": "优衣库", "type": "topic" }
+  ],
+  "atUserList": []
+}

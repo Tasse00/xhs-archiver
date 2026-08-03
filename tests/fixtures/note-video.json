@@ -1,0 +1,14 @@
+{
+  "noteId": "6a1111110000000011111111",
+  "type": "video",
+  "title": "一条视频笔记",
+  "desc": "",
+  "time": 1778584454000,
+  "user": { "userId": "u1", "nickname": "某人", "avatar": "https://x/y.jpg" },
+  "interactInfo": { "likedCount": "10", "collectedCount": "1", "commentCount": "2", "shareCount": "0" },
+  "imageList": [
+    { "fileId": "notes_pre_post/cover", "width": 1080, "height": 1440, "livePhoto": false, "stream": {}, "infoList": [] }
+  ],
+  "tagList": [],
+  "video": { "media": {}, "capa": {} }
+}
