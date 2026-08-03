@@ -1,0 +1,42 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { createStore, type Store } from '../../src/core/store';
+import { memRoot } from '../helpers/memory-fs';
+import { ensureRepoTemplates } from '../../src/core/repo-template';
+
+let store: Store;
+beforeEach(() => { store = createStore(memRoot()); });
+
+describe('ensureRepoTemplates', () => {
+  it('首次调用创建三个文件', async () => {
+    const created = await ensureRepoTemplates(store);
+    expect(created.sort()).toEqual(['.gitattributes', '.gitignore', 'README.md']);
+  });
+
+  it('.gitattributes 含 LFS 与 -merge 规则', async () => {
+    await ensureRepoTemplates(store);
+    const txt = (await store.readText('.gitattributes'))!;
+    expect(txt).toContain('**/images/** filter=lfs diff=lfs merge=lfs -text');
+    expect(txt).toContain('_index/**/*.json -merge');
+    expect(txt).toContain('**/note.json -merge');
+  });
+
+  it('README 含冲突处理与解除阻止的指引', async () => {
+    await ensureRepoTemplates(store);
+    const txt = (await store.readText('README.md'))!;
+    expect(txt).toContain('git checkout --theirs');
+    expect(txt).toContain('_index/');
+    expect(txt).toContain('last_archived_at');
+  });
+
+  it('已存在的文件不被覆盖', async () => {
+    await store.writeFile('README.md', '我自己写的\n');
+    const created = await ensureRepoTemplates(store);
+    expect(created).not.toContain('README.md');
+    expect(await store.readText('README.md')).toBe('我自己写的\n');
+  });
+
+  it('重复调用是幂等的', async () => {
+    await ensureRepoTemplates(store);
+    expect(await ensureRepoTemplates(store)).toEqual([]);
+  });
+});
