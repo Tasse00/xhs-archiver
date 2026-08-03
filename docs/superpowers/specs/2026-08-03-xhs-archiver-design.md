@@ -72,11 +72,11 @@ chrome.scripting.executeScript({
 1. **必须用 `note.currentNoteId._value` 定位**（它是 Vue ref）。`noteDetailMap` 中存在 `""` 与 `"undefined"` 等脏 key，遍历取首个非空 key 会拿到错误数据。
 2. **返回值可安全穿过扩展边界**：`noteDetailMap[id].note` 是纯数据（实测可 `structuredClone`，约 4.4 KB）。而 `__INITIAL_STATE__.note` 这一层含 `dep`/`computed` 循环引用，**不可整体序列化**，只能取 `.note` 子对象。
 
-#### 早期设计的桥接脚本已被撤销
+#### 登录态是前提
 
-验证报告曾观察到「hydration 后 `__INITIAL_STATE__` 被删除」，据此设计了 `document_start` 常驻脚本劫持赋值、patch fetch/XHR、经 MAIN→ISOLATED→Side Panel 三段链路传递数据。登录态复验表明该前提不成立——报告是在未登录会话下测得的，两者渲染路径不同。
+首轮探针在**未登录会话**下观察到「hydration 后 `__INITIAL_STATE__` 被删除」，据此一度设计了 `document_start` 常驻脚本劫持赋值、patch fetch/XHR、经三段链路传递数据。登录态复验表明该前提不成立——两种会话的渲染路径不同。
 
-插件的使用前提本就是登录态，故整套桥接机制连同其常驻脚本、消息链路与 nonce 校验一并撤销。若日后发现某入口确实读不到全局变量，再按 DOM 兜底处理。
+插件的使用前提本就是登录态，故不实现任何桥接机制。若登录态失效导致读不到全局变量，按 6. 的规则降级到 DOM 解析并在侧边栏提示。
 
 ### 3.4 目录名字符集
 
@@ -356,9 +356,7 @@ if (note.type === "video") return "unsupported_video";
 
 ## 9. 假设验证状态
 
-完整报告见 `2026-08-03-xhs-archiver-assumption-validation.md`。
-
-两轮验证：首轮为未登录会话（报告文档），次轮为登录态实测复验。**两轮结论在数据源一节上相反，以登录态为准**——插件的使用前提就是登录态。
+两轮真实页面验证：首轮为未登录会话，次轮为登录态实测复验。**两轮结论在数据源一节上相反，以登录态为准**——插件的使用前提就是登录态。下表为最终结论。
 
 ### 9.1 已验证并已并入设计
 
