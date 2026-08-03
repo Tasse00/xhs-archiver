@@ -239,14 +239,7 @@ _index/68/68a1b2c3d4e5f6/
 - v1：查重时若发现命中目录含多个指针，侧边栏就地提示「这篇存在 N 份重复采集」并列出各自路径
 - v3：统计面板提供全仓扫描，列出所有重复项供人工清理
 
-#### 残余的合并冲突风险
-
-设计只保证「不同采集者之间零冲突」。以下窄面仍会产生 Git 冲突，接受并以文档指引应对，不为其引入自定义 merge driver（那要求每个协作者本地执行 `git config`，是新的失败点）：
-
-- 同一采集者在两台机器上采集同一篇 → `{采集者}.json` 冲突。两份内容几乎相同，保留任一即可。
-- 同一采集者在两台机器上重采同一篇 → 该笔记的 `note.json` 冲突。规则：保留 `last_archived_at` 较新的一份。
-
-两条规则写入 `<root>/README.md`。
+各类合并场景的完整行为与处理步骤见第 12 节。
 
 ### 6.5 视频笔记
 
@@ -313,3 +306,65 @@ Vite + CRXJS + TypeScript + React（MV3 Side Panel）。
 统计面板（累计篇数、今日数、各采集者贡献、体积占用、全仓重复项扫描）、CSV/JSONL 导出
 
 v2 与 v3 均只新增 UI 视图并调用 `index-store` 的遍历聚合能力，核心层不改动。
+
+## 12. Git 合并行为与冲突处理
+
+### 12.1 各场景行为
+
+| 场景 | 结果 |
+|---|---|
+| 不同人采集不同笔记 | 自动合并 |
+| 不同人同时采集同一篇（6.4 竞态） | **自动合并**——指针文件名不同、数据目录路径也不同。产生的是需事后清理的重复，不是冲突 |
+| 同一人在两台机器上采集同一篇 | `{采集者}.json` add/add 冲突 |
+| 同一人在两台机器上重采同一篇 | `note.json` 内容冲突；若重下的图片 sha256 变化，还会有 LFS pointer 冲突 |
+| `.gitattributes` / `.gitignore` / `README.md` | 自动合并——插件只在 root 首次初始化时生成，已存在则不覆盖 |
+
+需要人工处理的仅后两类，均为同一采集者跨机器，规则一致：**整份取一侧，绝不逐行合并**。
+
+不为此引入自定义 merge driver——那要求每个协作者本地执行 `git config`，是新的失败点，而收益仅覆盖上述窄面。
+
+### 12.2 禁止逐行合并（必需）
+
+Git 默认对 json 做三方逐行合并，冲突时写入 `<<<<<<<` 标记，**会使 json 变为非法文件**，导致整条工具链无法读取。因此插件生成的 `.gitattributes` 必须包含：
+
+```gitattributes
+# 图片走 LFS
+**/images/**      filter=lfs diff=lfs merge=lfs -text
+
+# 索引与笔记数据禁止逐行合并：语义上只能整份取一侧
+_index/**/*.json  -merge
+**/note.json      -merge
+```
+
+`-merge` 使冲突时工作区保留本地那份完整可读的 json，仅标记冲突，等待显式选择。
+
+### 12.3 处理步骤
+
+**json 冲突**
+
+```bash
+# 比较两侧的采集时间
+git show :2:<path>/note.json | grep last_archived_at   # ours
+git show :3:<path>/note.json | grep last_archived_at   # theirs
+
+# 整份取较新的一侧
+git checkout --theirs <path>/note.json
+git add <path>/note.json
+```
+
+若两侧指针的 `path` 不同（数据落在了两个数据集目录下），选定一份后须删除另一个数据目录，否则会留下无指针指向的孤儿目录。
+
+**LFS pointer 冲突**：同样 `git checkout --theirs <图片路径>`，随后 `git lfs pull` 补齐实体文件。
+
+**合并后清理重复采集**
+
+```bash
+find _index -mindepth 2 -maxdepth 2 -type d \
+  -exec sh -c '[ $(ls -1 "$1" | wc -l) -gt 1 ] && echo "$1"' _ {} \;
+```
+
+保留 `first_archived_at` 较早的一份（先采者优先），删除另一份的**数据目录与指针文件**两处。v3 统计面板将此扫描做成 UI。
+
+### 12.4 写入 README
+
+12.1 的场景表、12.3 的全部命令，以及 6.3 的「删除他人指针以解除阻止」指引，均写入插件生成的 `<root>/README.md`，使接手仓库的人无需询问即可处理。
