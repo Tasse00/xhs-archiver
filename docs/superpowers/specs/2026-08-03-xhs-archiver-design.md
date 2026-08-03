@@ -50,32 +50,33 @@ Side Panel 是协调者兼执行者：持有目录句柄、发起图片 fetch、
 - FSA 权限恢复需要用户手势，Service Worker 中没有 UI 可供点击
 - Side Panel 只要开着就持续存活，天然适合长任务
 
-页面侧另有一个常驻的轻量**数据桥接脚本**，仅负责捕获与短期缓存，不下载图片、不接触文件系统。详见 3.5。
+### 3.5 数据源
 
-### 3.5 数据桥接脚本
+**登录态下**，`window.__INITIAL_STATE__` 是一个持续存在的 Vue 响应式 store，三种入口均可在用户点击采集时直接读取：
 
-**这是被探针验证推翻原方案后的必需设计**（验证报告见 `2026-08-03-xhs-archiver-assumption-validation.md`）。
-
-实测：页面 hydration 完成后 `window.__INITIAL_STATE__ === undefined`，应用会删除该全局变量。因此原设计中「用户点击采集时才 `chrome.scripting.executeScript({world:'MAIN'})` 去读全局变量」的做法**不成立**——执行时机远晚于 hydration。同理，modal 场景下等用户点击才拦截 `/api/sn/web/v1/feed`，请求早已完成，响应体无法回读。
-
-改为在 `document_start` 常驻捕获：
-
-```
-MAIN world 脚本（run_at: document_start）
-  ├── Object.defineProperty 劫持 __INITIAL_STATE__ 的赋值，存闭包副本
-  │   （页面此后 delete 该属性不影响副本）
-  ├── patch fetch / XMLHttpRequest，按 noteId 缓存目标接口响应
-  └── window.postMessage 向外传递
-        ↓  接收方校验 event.source === window 且 nonce 匹配
-ISOLATED world 脚本
-  └── chrome.runtime.sendMessage
-        ↓
-Side Panel（用户点击采集时按 noteId 索取）
+```ts
+chrome.scripting.executeScript({
+  world: "MAIN",
+  func: () => {
+    const s = window.__INITIAL_STATE__.note;
+    const id = String(s.currentNoteId._value);
+    return structuredClone(s.noteDetailMap[id].note);
+  },
+});
 ```
 
-三段链路是必需的：**MAIN world 中没有 `chrome.runtime`**，无法直接与扩展通信；而 ISOLATED world 又读不到页面的全局变量。`window.postMessage` 对页面脚本可见，故须校验来源与 nonce——数据本就来自页面，此举防的是误收而非窃密。
+`world: "MAIN"` 是必需的——隔离世界读不到页面的全局变量。
 
-桥接脚本不改变 3.3 的结论：图片下载、文件系统权限与写盘仍全部由 Side Panel 执行。
+两条经实测确认的硬性细节：
+
+1. **必须用 `note.currentNoteId._value` 定位**（它是 Vue ref）。`noteDetailMap` 中存在 `""` 与 `"undefined"` 等脏 key，遍历取首个非空 key 会拿到错误数据。
+2. **返回值可安全穿过扩展边界**：`noteDetailMap[id].note` 是纯数据（实测可 `structuredClone`，约 4.4 KB）。而 `__INITIAL_STATE__.note` 这一层含 `dep`/`computed` 循环引用，**不可整体序列化**，只能取 `.note` 子对象。
+
+#### 早期设计的桥接脚本已被撤销
+
+验证报告曾观察到「hydration 后 `__INITIAL_STATE__` 被删除」，据此设计了 `document_start` 常驻脚本劫持赋值、patch fetch/XHR、经 MAIN→ISOLATED→Side Panel 三段链路传递数据。登录态复验表明该前提不成立——报告是在未登录会话下测得的，两者渲染路径不同。
+
+插件的使用前提本就是登录态，故整套桥接机制连同其常驻脚本、消息链路与 nonce 校验一并撤销。若日后发现某入口确实读不到全局变量，再按 DOM 兜底处理。
 
 ### 3.4 目录名字符集
 
@@ -96,8 +97,8 @@ Side Panel（用户点击采集时按 noteId 索取）
         └── 68a1b2c3d4e5f6/           ← 笔记 ID
             ├── note.json
             └── images/
-                ├── 01.jpg            ← 扩展名由响应 Content-Type 定，原图多为 JPEG
-                └── 02.jpg
+                ├── 01.jpg            ← 扩展名由响应 Content-Type 定：原图 jpg，降级后 webp
+                └── 02.webp
 ```
 
 ### 4.1 数据集路径
@@ -206,57 +207,62 @@ _index/68/68a1b2c3d4e5f6/
 
 采集时即下载到该笔记目录下。
 
-**探针推翻了「从 `infoList` 选最高质量」的原方案。** 实测 `infoList` 只含 `WB_PRV` 与 `WB_DFT` 两种 scene，两者像素尺寸完全相同（样本中均为 1080×1655，仅压缩率不同），**都不是原图**。原图须由 `image.fileId` 构造地址取得：
+**探针推翻了「从 `infoList` 选最高质量」的原方案。** 实测 `infoList` 只含 `WB_PRV` 与 `WB_DFT` 两种 scene，两者像素尺寸完全相同（均为 1080 宽，仅压缩率不同），**都不是原图**。原图须由 `image.fileId` 构造地址取得，且**不需要任何 token**：
 
 | 来源 | 尺寸 | 大小 | Content-Type |
 |---|---|---:|---|
-| `WB_PRV` | 1080 × 1655 | 23 KB | `image/webp` |
-| `WB_DFT` | 1080 × 1655 | 73 KB | `image/webp` |
-| **`sns-img-qc.xhscdn.com/{fileId}`** | **1780 × 2728** | **339 KB** | `image/jpeg` |
+| `WB_PRV` | 1080 宽 | 23 KB | `image/webp` |
+| `WB_DFT` | 1080 宽 | 73 KB | `image/webp` |
+| `{host}/{fileId}`，前缀 `notes_pre_post/` | 3106 × 4096 | 997 KB | `image/jpeg` |
+| `{host}/{fileId}`，前缀 `note_pre_post_uhdr/` | 声明 3024 × 4032 | 1.36 MB | **`image/heic`** |
+
+候选 host：`https://sns-img-qc.xhscdn.com/` 与 `https://ci.xiaohongshu.com/`，实测返回字节数完全一致，互为镜像。
 
 获取顺序：
 
 1. 由 `fileId` 构造原图 URL 并下载
 2. 校验 HTTP 状态与 `Content-Type`
-3. 解码并比对实际尺寸与 `image.width` / `image.height`
-4. 一致则接受，`source_kind: "original"`
-5. 失败或尺寸异常则回退 `WB_DFT`，再回退 `WB_PRV`，`source_kind` 记录实际来源
+3. **可解码格式（jpeg/png/webp）**：解码并比对实际尺寸与 `image.width` / `image.height`，一致则接受，`source_kind: "original"`
+4. **HEIC**：放弃原图，降级 `WB_DFT`（见下）
+5. 请求失败或尺寸不符时同样降级 `WB_DFT`，再降级 `WB_PRV`，`source_kind` 记录实际来源
+
+#### HEIC 处理
+
+部分笔记（`fileId` 前缀含 `uhdr`，即 Ultra HDR）的原图为 HEIC。Chrome 无法解码，`createImageBitmap` 直接失败，故「解码校验尺寸」这道检查对它不适用；下游兼容性也差（Windows 默认不支持，多数图像库需额外依赖）。
+
+**决定：遇到 HEIC 即降级为 `WB_DFT`**，使全库图片格式统一可用。
+
+**代价可控，前提是 `file_id` 必须始终写入 `note.json`。** 原图地址不依赖 `xsec_token`、CDN 不校验 `Referer`，凭 `file_id` 随时可批量重取原图——降级只是没有落盘，不是永久失去。配合 `source_kind` 可精确筛出这批图。
 
 其他规则：
 
 - 编号与 `imageList` 顺序严格一致，从 `01` 起，两位补零
-- 扩展名由响应的 `Content-Type` 决定——**不可假定为 WebP，原图多为 JPEG**
+- 扩展名由响应的 `Content-Type` 决定——**不可假定为 WebP**
 - `file` 记录实际文件名，保证 json 与磁盘一一对应
-- `source_kind` 使日后可审计哪些图发生过降级，便于批量重取
-- 原图 host 及其区域后缀可能变化，构造逻辑与候选 host 集中封装于一处
+- 原图 host 及其区域后缀可能变化，构造逻辑与候选 host 集中封装于 `core/image-source.ts`
 
 实况图（Live Photo）只保存静态帧，不视为视频笔记。判定采用 `image.livePhoto === true`，字段缺失时按 `false` 处理，**任何情况下都不阻断采集**——判错的唯一后果是 `is_live` 标记不准，不影响归档正确性。取得真实样本后再校准。
 
 ## 6. 采集流程
 
 ```
-[桥接脚本]                      [Side Panel]                      [磁盘]
-     │
-     │ ① 页面加载时即捕获初始状态 / feed 响应，按 noteId 缓存
-     │
-     │ ② 用户点击采集，Side Panel 按 noteId 索取
+[小红书页面]                    [Side Panel]                      [磁盘]
+     │                              │
+     │ ① 用户点击采集
+     │   executeScript({ world: 'MAIN' })
      │←─────────────────────────────│
-     │ ③ 返回原始 note 对象
+     │ ② 返回 noteDetailMap[currentNoteId._value].note
      │─────────────────────────────→│
-                                    │ ④ 归一化 → NoteRecord
-                                    │ ⑤ 查 _index ────────────────→ 已采过？谁采的？
-                                    │ ⑥ 按 fileId 取原图，全部下载到内存
-                                    │ ⑦ 写盘 ──────────────────────→ note.json + images/
-                                    │ ⑧ 写指针 ────────────────────→ _index/xx/{id}/{采集者}.json
+                                    │ ③ 归一化 → NoteRecord
+                                    │ ④ 查 _index ────────────────→ 已采过？谁采的？
+                                    │ ⑤ 按 fileId 取原图（HEIC 则降级），下载到内存
+                                    │ ⑥ 写盘 ──────────────────────→ note.json + images/
+                                    │ ⑦ 写指针 ────────────────────→ _index/xx/{id}/{采集者}.json
 ```
 
-数据来源优先级（③ 未命中时逐级降级）：
+三种入口（独立页、首页 modal、搜索页 modal）在登录态下走完全相同的路径，实测均可读到完整数据（见 3.5）。
 
-**独立页**：预先捕获的初始状态 → 解析 DOM 中残留的内嵌状态脚本 → DOM 解析
-
-**modal**：预先拦截缓存的 feed 响应 → DOM 解析
-
-关于内嵌状态脚本兜底：实测该脚本文本含 24 处 JavaScript `undefined` 字面量，不能直接 `JSON.parse`。处理方式是先做 `replace(/:\s*undefined\b/g, ':null')` 再解析，失败即降级到 DOM。**不使用 `eval` / `new Function` 执行页面提供的字符串。** 不为此实现 JS 子集解析器——这是兜底的兜底，成本应与其地位相称。
+② 未命中时降级到 DOM 解析，并在侧边栏提示数据可能不完整。不实现「解析 DOM 中残留的内嵌状态脚本」这一层——该脚本文本含 JavaScript `undefined` 字面量、非严格 JSON，而登录态下全局变量本就可读，为一个不会发生的场景写解析器不划算。**任何情况下都不使用 `eval` / `new Function` 执行页面提供的字符串。**
 
 ### 6.1 原子性
 
@@ -318,10 +324,8 @@ if (note.type === "video") return "unsupported_video";
 
 | 模块 | 职责 | 测试方式 |
 |---|---|---|
-| `bridge/main-world.ts` | `document_start` 注入：劫持 `__INITIAL_STATE__` 赋值、patch fetch/XHR、按 noteId 缓存、postMessage 外发 | 喂 fixture 驱动 |
-| `bridge/isolated.ts` | postMessage ↔ chrome.runtime 中继，校验来源与 nonce | 单测 |
-| `core/extractor.ts` | 原始对象 → `NoteRecord`；判定视频笔记与实况图 | 喂 fixture JSON |
-| `core/image-source.ts` | 由 `fileId` 构造原图 URL、候选 host、尺寸校验、降级顺序 | 单测 |
+| `core/extractor.ts` | 原始对象 → `NoteRecord`；互动数字符串转数字；判定视频笔记与实况图 | 喂 fixture JSON |
+| `core/image-source.ts` | 由 `fileId` 构造原图 URL、候选 host、格式判定、尺寸校验、降级顺序 | 单测 |
 | `core/store.ts` | FSA 封装：授权、建目录、原子写、读、递归删除 | OPFS 模拟 |
 | `core/index-store.ts` | 指针文件读写、查重、全量遍历聚合 | OPFS 模拟 |
 | `core/archiver.ts` | 流程编排：查重 → 下图 → 写盘 → 写指针；发布进度事件 | 注入 mock |
@@ -349,27 +353,30 @@ if (note.type === "video") return "unsupported_video";
 
 完整报告见 `2026-08-03-xhs-archiver-assumption-validation.md`。
 
+两轮验证：首轮为未登录会话（报告文档），次轮为登录态实测复验。**两轮结论在数据源一节上相反，以登录态为准**——插件的使用前提就是登录态。
+
 ### 9.1 已验证并已并入设计
 
 | 结论 | 影响 |
 |---|---|
-| `__INITIAL_STATE__` 在 hydration 后被删除，点击时再注入读不到 | 推翻原方案，改为 3.5 的 `document_start` 桥接脚本 |
-| `infoList` 只有 `WB_PRV`/`WB_DFT`，均为 1080 宽派生图，都不是原图；原图须由 `fileId` 构造 | 重写 5.3 的图片获取规则 |
-| 原图为 JPEG 且体积约为 `WB_DFT` 的 4–5 倍 | 存储估算翻 5 倍，促成 3.1 的自建 Git 服务决策 |
-| 独立页 CDN 不校验 `Referer`，且返回 `Access-Control-Allow-Origin: *` | 无需 `declarativeNetRequest` 改写；仍需声明 `host_permissions` |
+| **登录态下三种入口均可读 `__INITIAL_STATE__.note.noteDetailMap`**，`readyState: complete` 时依然存在 | 推翻未登录会话的「已被删除」结论，撤销整套桥接脚本，回到 3.5 的 `executeScript` |
+| 必须用 `currentNoteId._value` 定位；`noteDetailMap` 含 `""`/`"undefined"` 脏 key | 写入 3.5 |
+| `noteDetailMap[id].note` 可 `structuredClone`（约 4.4 KB）；但其父层含 `dep`/`computed` 循环引用 | 只取 `.note` 子对象作为返回值 |
+| `interactInfo` 各字段为字符串；`time` 为毫秒时间戳；`tagList[].type === "topic"` | 归一化规则，写入 `core/extractor.ts` |
+| note 字段顺序在不同入口下不一致 | 印证 5. 的固定 key 顺序要求 |
+| `infoList` 只有 `WB_PRV`/`WB_DFT`，均 1080 宽，都不是原图；原图由 `fileId` 构造且不需 token | 重写 5.3 |
+| `fileId` 前缀有 `notes_pre_post/` 与 `note_pre_post_uhdr/` 等多种；后者原图为 **HEIC** | 5.3 的 HEIC 降级规则 |
+| 两个原图 host 返回字节数完全一致，互为镜像 | 回退有效 |
+| CDN 不校验 `Referer`，返回 `Access-Control-Allow-Origin: *` | 无需 `declarativeNetRequest`；仍需声明 `host_permissions` |
 | 视频判据为 `note.type === "video"`，`videoList` 不存在 | 写入 6.5 |
-| 内嵌状态脚本含 `undefined` 字面量，非严格 JSON | 写入第 6 节的兜底解析规则 |
 
-### 9.2 开工前必须完成
+### 9.2 不阻塞开工，实现中校准
 
-**modal 入口验证（阻塞项）。** 需登录态，确认首页与搜索结果页点开 modal 时：目标接口路径、响应是否含完整 note、noteId 的定位方式、桥接脚本的缓存时机是否足够早。若 feed 响应不含完整数据，采集触发方式需再次调整。
-
-### 9.3 不阻塞开工，实现中校准
-
-- **实况图 fixture。** 按 `image.livePhoto === true` 实现，字段缺失按 `false`，不阻断采集（理由见 5.3）。取得新版与历史样本后校准。
-- **多样本验证 `fileId` 原图地址。** 确认区域 host 候选与回退顺序对老笔记同样成立。
+- **实况图 fixture。** 按 `image.livePhoto === true` 实现，字段缺失按 `false`，不阻断采集（理由见 5.3）。取得样本后校准。
+- **互动数的极端取值。** 已确认为字符串（`"1236"`）。需确认是否存在 `"1.2万"`、`"10万+"` 一类非纯数字形式，并在归一化时处理。
 - **在真实 `chrome-extension://` 上下文中完整跑一次 fetch**，确认 manifest 权限配置正确。
-- **覆盖其他 CDN 区域域名。** 若出现 403，先尝试其他原图 host 与 `WB_DFT` 回退，再考虑 Referer 改写。
+- **覆盖其他 CDN 区域域名。** 若出现 403，先尝试另一原图 host 与 `WB_DFT` 回退，再考虑 Referer 改写。
+- **未登录 / 登录态失效时的行为。** 此时全局变量可能不可读，应给出明确提示而非静默失败。
 
 ## 10. 技术栈
 
@@ -379,19 +386,9 @@ Vite + CRXJS + TypeScript + React（MV3 Side Panel）。
 
 图片跨域 fetch 依赖 `host_permissions` 声明；扩展页面在已声明权限的情况下发起的 fetch 不受 CORS 限制。需声明的 host 至少包括 `*.xhscdn.com` 与 `ci.xiaohongshu.com`。
 
-manifest 需注册两个 content script，`matches` 限定 `*.xiaohongshu.com`：
-
-| 脚本 | world | run_at |
-|---|---|---|
-| `bridge/main-world` | `MAIN` | `document_start` |
-| `bridge/isolated` | `ISOLATED` | `document_start` |
-
-`document_start` 是硬要求：晚于此则错过 `__INITIAL_STATE__` 的赋值与首批 feed 请求。
+**不需要注册任何常驻 content script。** 数据读取通过 `chrome.scripting.executeScript` 按需注入，因此需要 `scripting` 权限与 `*.xiaohongshu.com` 的 host 权限。
 
 ## 11. 迭代切分
-
-**v0（开工前置）**
-登录态下完成 9.2 的 modal 入口验证，产出三份 fixture：独立页图文、首页 modal 图文、搜索 modal 图文。
 
 **v1（可用）**
 设置引导（选 root 目录 + 采集者 ID）→ 页面识别 → 查重（自己的可更新/迁移，他人的阻止）→ 单篇采集 → 视频笔记拒绝 → 部分失败重试 → 重复采集就地提示 → 复制临时链接
