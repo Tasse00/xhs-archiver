@@ -1,7 +1,7 @@
-export interface Store {
+import type { DirEntry, ReadStore } from './read-store';
+
+export interface Store extends ReadStore {
   writeFile(path: string, data: BlobPart): Promise<void>;
-  readText(path: string): Promise<string | null>;
-  exists(path: string): Promise<boolean>;
   listDir(path: string): Promise<string[]>;
   removeDir(path: string): Promise<void>;
   removeFile(path: string): Promise<void>;
@@ -53,6 +53,28 @@ export function createStore(root: FileSystemDirectoryHandle): Store {
         if (isNotFound(e)) return null;
         throw e;
       }
+    },
+
+    async readFile(path) {
+      const parts = segments(path);
+      const name = parts.pop()!;
+      const dir = await dirOf(parts, false);
+      if (!dir) return null;
+      try {
+        const fh = await dir.getFileHandle(name);
+        return await fh.getFile();
+      } catch (e) {
+        if (isNotFound(e)) return null;
+        throw e;
+      }
+    },
+
+    async listEntries(path) {
+      const dir = await dirOf(segments(path), false);
+      if (!dir) return [];
+      const out: DirEntry[] = [];
+      for await (const [name, h] of dir.entries()) out.push({ name, kind: h.kind });
+      return out;
     },
 
     async exists(path) {
