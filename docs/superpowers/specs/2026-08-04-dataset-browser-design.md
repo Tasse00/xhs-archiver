@@ -149,9 +149,9 @@ type NoteKey = string;   // `${datasetPath}/${noteId}`
 
 读封面文件 → `createImageBitmap(blob, {resizeWidth: 96, resizeQuality: 'low'})` → OffscreenCanvas → `convertToBlob` → objectURL。**原始 blob 立刻丢弃，只留 96px 那份**（行高 44px，96 是给 2x 屏留的余量）。
 
-三种尺寸各自独立缓存，缓存键是 `${noteKey}::${file}::${size}`：列表行 96px、详情缩略图条 320px、看图器原图。看图器退出时立刻释放原图那份。
+三种尺寸各自独立缓存，缓存键是 `${noteKey}::${file}::${size}`：列表行 96px、详情缩略图条 320px、看图器原图。
 
-objectURL 进 LRU（上限 300 条），淘汰时 `URL.revokeObjectURL`。这是整个功能里唯一会吃内存的地方，不这么做撑不过几屏。切换范围、重新加载、组件卸载时释放全部。
+**两张表分开：缩略图 LRU 上限 300，原图 LRU 上限 3。** 原图一张几 MB，混进 300 条的表里会一直占着内存不放，而它只在看图器打开时需要。淘汰时 `URL.revokeObjectURL`。这是整个功能里唯一会吃内存的地方，不这么做撑不过几屏。切换范围、重新加载、组件卸载时释放全部。
 
 读取走并发上限 6 的队列，滚出视口的任务在启动前丢弃；已经启动、无法真正中止的读取完成后结果被忽略并立即释放。
 
@@ -222,6 +222,8 @@ export interface ReadStore {
 | `core/browse/comments.ts` | `loadComments(readStore, ref)` → 完整评论结构 + 配图相对路径 |
 | `core/browse/quality.ts` | `checkQuality(readStore, ref, detail)` → §4.5 的状态判定 |
 | `core/browse/search.ts` | 内存里的过滤与排序 |
+| `core/browse/scan.ts` | `scanScope()`，§5.5 那套显式扫描的进度与取消 |
+| `core/browse/types.ts` | 共享数据形状。`tree.ts` 与 `row-meta.ts` 互相需要类型，不抽出来会形成循环 import |
 | `core/browse/virtual.ts` | `visibleRange(scrollTop, viewportHeight, rowHeight, total, overscan)`，纯函数 |
 | `core/browse/lru.ts` | 泛型 LRU，淘汰时调注入的 `onEvict`。缩略图缓存的骨架 |
 | `core/browse/queue.ts` | 并发上限队列，支持在任务启动前丢弃、启动后忽略结果 |
