@@ -5,8 +5,10 @@ import { checkNote, archive } from '../../src/core/archiver';
 import { writePointer, lookup } from '../../src/core/index-store';
 import { extract } from '../../src/core/extractor';
 import type { Deps } from '../../src/core/downloader';
-import type { ExtractedNote, RawNote, Pointer } from '../../src/types';
+import { extractComments } from '../../src/core/comments';
+import type { ExtractedComments, ExtractedNote, RawComments, RawNote, Pointer } from '../../src/types';
 import imageNote from '../fixtures/note-image.json';
+import rawComments from '../fixtures/note-comments.json';
 
 const NOTE_ID = '6a030b860000000036000201';
 
@@ -27,6 +29,23 @@ function okDeps(): Deps {
     })) as unknown as typeof fetch,
     async decode() { return { width: 3106, height: 4096 }; },
     async sha256() { return 'hash'; },
+  };
+}
+
+function goodComments(): ExtractedComments {
+  return extractComments(rawComments as unknown as RawComments, 96);
+}
+
+/** 只让评论图的请求失败，笔记图照常成功。 */
+function commentImageFailDeps(): Deps {
+  const base = okDeps();
+  const inner = base.fetch;
+  return {
+    ...base,
+    fetch: (async (url: string) =>
+      url.includes('/comment/')
+        ? ({ ok: false, status: 500, headers: new Headers() } as unknown as Response)
+        : inner(url)) as unknown as typeof fetch,
   };
 }
 
@@ -112,6 +131,91 @@ describe('archive - 新采集', () => {
       mode: 'new', deps: okDeps(), onProgress: (done) => seen.push(done),
     });
     expect(seen).toEqual([1]);
+  });
+});
+
+describe('archive - 评论', () => {
+  const dir = `zach/2026-08-03/${NOTE_ID}`;
+
+  async function archiveWithComments(deps = okDeps()) {
+    return archive({
+      store, note: goodNote(), comments: goodComments(), collector: 'zach',
+      datasetPath: 'zach/2026-08-03', mode: 'new', deps,
+    });
+  }
+
+  it('与 note.json 同目录写出 comments.json', async () => {
+    await archiveWithComments();
+    const j = JSON.parse((await store.readText(`${dir}/comments.json`))!);
+    expect(j.note_id).toBe(NOTE_ID);
+    expect(j.declared_total).toBe(96);
+    expect(j.collected_count).toBe(4);
+    expect(j.complete).toBe(false);
+    expect(j.comments).toHaveLength(3);
+    expect(j.comments[1].sub_comments[0].content).toBe('笑死我了');
+  });
+
+  it('评论图落到 images/comments/，文件名带评论 id', async () => {
+    await archiveWithComments();
+    const j = JSON.parse((await store.readText(`${dir}/comments.json`))!);
+    const img = j.comments[2].images[0];
+    expect(img.file).toBe('images/comments/6a61e88a00000000090162b7-01.jpg');
+    expect(img.source_kind).toBe('WB_DFT');
+    expect(await store.exists(`${dir}/${img.file}`)).toBe(true);
+  });
+
+  // 评论是附属数据。让一张取不到的评论配图把整篇笔记拖成 partial、
+  // 进而不写指针，等于因为末节丢掉主干。
+  it('评论图失败不影响归档状态与指针', async () => {
+    const res = await archiveWithComments(commentImageFailDeps());
+    expect(res.status).toBe('complete');
+    expect(res.commentImageFailures).toHaveLength(1);
+    expect(await lookup(store, NOTE_ID)).toHaveLength(1);
+  });
+
+  it('取不到的评论图在 comments.json 里留空数组，不留半截记录', async () => {
+    await archiveWithComments(commentImageFailDeps());
+    const j = JSON.parse((await store.readText(`${dir}/comments.json`))!);
+    expect(j.comments[2].images).toEqual([]);
+  });
+
+  // 没读到评论和「读到了、就是 0 条」不是一回事，前者不该留下空文件。
+  it('没有评论数据时不写 comments.json', async () => {
+    await archive({
+      store, note: goodNote(), collector: 'zach',
+      datasetPath: 'zach/2026-08-03', mode: 'new', deps: okDeps(),
+    });
+    expect(await store.exists(`${dir}/comments.json`)).toBe(false);
+  });
+
+  it('进度把评论图算在总数里', async () => {
+    const seen: [number, number][] = [];
+    await archive({
+      store, note: goodNote(), comments: goodComments(), collector: 'zach',
+      datasetPath: 'zach/2026-08-03', mode: 'new', deps: okDeps(),
+      onProgress: (done, total) => seen.push([done, total]),
+    });
+    // 笔记图 1 张 + 评论图 1 张
+    expect(seen).toEqual([[1, 2], [2, 2]]);
+  });
+
+  // 重采时评论只会更少（旧评论被删）或更多，残留的旧文件会造成
+  // 「comments.json 说没有这张图，目录里却躺着一张」的不一致。
+  it('重采时清掉上一次的评论图目录', async () => {
+    await archiveWithComments();
+    const imgPath = `${dir}/images/comments/6a61e88a00000000090162b7-01.jpg`;
+    expect(await store.exists(imgPath)).toBe(true);
+
+    const noPic = extractComments(
+      { list: [(rawComments as unknown as RawComments).list![0]] } as RawComments,
+      96,
+    );
+    const existing = (await lookup(store, NOTE_ID))[0]!;
+    await archive({
+      store, note: goodNote(), comments: noPic, collector: 'zach',
+      datasetPath: 'zach/2026-08-03', mode: 'update', existing, deps: okDeps(),
+    });
+    expect(await store.exists(imgPath)).toBe(false);
   });
 });
 

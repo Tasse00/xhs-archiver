@@ -82,7 +82,10 @@ export function App() {
                 ok: false,
                 reason: 'inject_failed',
                 detail: '当前窗口没有活动标签页',
-                diag: { pathname: '', urlId: null, currentNoteId: null, mapKeys: [], entryFound: false },
+                diag: {
+                  pathname: '', urlId: null, currentNoteId: null,
+                  mapKeys: [], entryFound: false, commentCount: 0,
+                },
               }
             : readNoteViaTab(tab.id),
       });
@@ -151,6 +154,7 @@ export function App() {
     const res = await archive({
       store,
       note: state.note,
+      comments: state.comments,
       collector,
       datasetPath,
       mode,
@@ -161,7 +165,14 @@ export function App() {
     await saveSettings(chromeLocalArea, { collector, datasetPath });
     // 必须先 refresh 再记结果：refresh 会清空「本次」标记。
     await refresh();
-    setJustArchived({ mode, status: res.status, path: res.path, failures: res.failures });
+    setJustArchived({
+      mode,
+      status: res.status,
+      path: res.path,
+      failures: res.failures,
+      comments: state.comments,
+      commentImageFailures: res.commentImageFailures,
+    });
   }
 
   return (

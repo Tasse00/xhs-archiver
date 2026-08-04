@@ -13,6 +13,7 @@
 ### 做
 
 - 单篇图文笔记的完整归档
+- 随笔记一并采集**页面上已加载的**评论（含回复与配图），见第 13 节
 - 采集前的全局去重检查，并显示上次采集时间与采集者
 - 视频笔记识别并拒绝采集，给出明确提示
 - 采集者身份与写入路径的配置与引导
@@ -21,7 +22,7 @@
 ### 不做
 
 - 视频笔记的采集
-- 评论区采集
+- **评论区的全量采集**：不滚动页面、不点「展开 N 条回复」、不构造评论 API 请求。理由见 13.1
 - 作者主页扩展信息（粉丝数等）采集
 - 批量／自动化采集（本插件为「看到一篇、采一篇」的手动工具）
 - 由插件执行任何 git 命令（commit/push 由使用者自行完成）
@@ -126,9 +127,12 @@ chrome.scripting.executeScript({
     └── 2026-08-03/                   ← 数据集，可自定义
         └── 68a1b2c3d4e5f6/           ← 笔记 ID
             ├── note.json
+            ├── comments.json         ← 只在读到评论数据时生成，见第 13 节
             └── images/
                 ├── 01.jpg            ← 扩展名由响应 Content-Type 定：原图 jpg，降级后 webp
-                └── 02.webp
+                ├── 02.webp
+                └── comments/         ← 评论配图，文件名为 {评论id}-{序号}.{ext}
+                    └── 6a61e88a00000000090162b7-01.webp
 ```
 
 ### 4.1 数据集路径
@@ -289,13 +293,14 @@ _index/68/68a1b2c3d4e5f6/
      │ ① 用户点击采集
      │   executeScript({ world: 'MAIN' })
      │←─────────────────────────────│
-     │ ② 返回 noteDetailMap[URL 里的 note id].note
+     │ ② 返回 noteDetailMap[URL 里的 note id] 下的 note 与 comments
      │─────────────────────────────→│
-                                    │ ③ 归一化 → NoteRecord
+                                    │ ③ 归一化 → NoteRecord + CommentsFile
                                     │ ④ 查 _index ────────────────→ 已采过？谁采的？
                                     │ ⑤ 按 fileId 取原图（HEIC 则降级），下载到内存
-                                    │ ⑥ 写盘 ──────────────────────→ note.json + images/
-                                    │ ⑦ 写指针 ────────────────────→ _index/xx/{id}/{采集者}.json
+                                    │ ⑥ 取评论配图（失败只跳过该张，见 13.4）
+                                    │ ⑦ 写盘 ──────────────────────→ note.json + comments.json + images/
+                                    │ ⑧ 写指针 ────────────────────→ _index/xx/{id}/{采集者}.json
 ```
 
 三种入口（独立页、首页 modal、搜索页 modal）在登录态下走完全相同的路径，实测均可读到完整数据（见 3.5）。
@@ -309,6 +314,8 @@ _index/68/68a1b2c3d4e5f6/
 1. 全部图片先 fetch 到内存（一篇 6–10 张，数 MB，可接受）
 2. 全部成功后才开始写盘，最后写 `_index` 指针
 3. 任一图片失败则重试 2 次；仍失败则整篇标记 `status: "partial"`，**不写指针文件**，目录保留供人工检查，侧边栏提供重试按钮
+
+**评论配图不参与这条不变量**：它取不到只跳过该张，不影响 `status`、不阻止写指针。评论是附属数据，让一张配图把主干拖成 `partial` 是本末倒置。见 13.4。
 
 `partial` 的目录因无指针而不被查重发现，这是有意为之：它在语义上等同于「未采集」。重试按钮仅在当次面板会话内有效；若已关闭面板，重新采集该笔记会直接覆盖这个残缺目录，结果正确。代价是残缺目录若一直无人重采，会滞留在磁盘上——由使用者在 `git status` 中发现并处理。
 
@@ -417,6 +424,14 @@ if (note.type === "video") return "unsupported_video";
 | 两个原图 host 返回字节数完全一致，互为镜像 | 回退有效 |
 | CDN 不校验 `Referer`，返回 `Access-Control-Allow-Origin: *` | 无需 `declarativeNetRequest`；仍需声明 `host_permissions` |
 | 视频判据为 `note.type === "video"`，`videoList` 不存在 | 写入 6.5 |
+| **评论在 `noteDetailMap[id].comments`**，与 `note` 同级，结构 `{list, cursor, hasMore, loading, firstRequestFinish}` | 与 note 同一次注入取回，见 13.2 |
+| **首屏只有 10 条主评论，每条有回复的只预载 1 条回复** | 「只采已加载的」意味着默认约 10~20 条，必须在 UI 上标出差额，见 13.5 |
+| **裸 fetch 评论 API 返回 406**；用页面的 `_webmsxyw` 加签后过签，但被风控挡回 `300011 当前账号存在异常` | 否决构造 API 请求这条路，见 13.1 |
+| 滚动 `.note-scroller` 到底可加载全部主评论，反复点 `.show-more` 可展开全部回复；实测 96 条评论 4 轮滚动 + 3 轮点击可全部取到 | 技术可行但会操作用户正在看的页面，故不采用，见 13.1 |
+| **`主评论数 + Σ子评论数` 恰等于 `interactInfo.commentCount`**（实测 96/96 精确吻合） | 可直接作为完整性判据，即 `complete` 字段 |
+| **`subCommentHasMore` 在回复加载完后不会重置为 false** | 它不可作为「是否已加载完」的判据 |
+| **评论图无 `fileId`**，按笔记原图规则构造的地址一律 404；只有 `WB_DFT`/`WB_PRV` 可用，且 url 是 `http://` | 评论图单独一套候选，见 13.4 |
+| **评论图的声明尺寸是展示尺寸**，实测 284×367 的图实际为 556×717 | 评论图不做尺寸校验，否则全数失败 |
 
 ### 9.2 不阻塞开工，实现中校准
 
@@ -510,3 +525,88 @@ find _index -mindepth 2 -maxdepth 2 -type d \
 ### 12.4 写入 README
 
 12.1 的场景表、12.3 的全部命令，以及 6.3 的「删除他人指针以解除阻止」指引，均写入插件生成的 `<root>/README.md`，使接手仓库的人无需询问即可处理。
+
+## 13. 评论采集
+
+### 13.1 只采页面上已加载的评论
+
+**采集范围就是「打开侧边栏那一刻，页面自己已经填进 `noteDetailMap[id].comments` 的那些」。** 插件不滚动页面、不点击任何按钮、不构造评论 API 请求。
+
+这条边界是从三个被否决的方案里剩下来的：
+
+| 方案 | 否决理由 |
+|---|---|
+| 构造评论 API 请求 | 裸 fetch 直接 406。借页面的 `_webmsxyw` 加签能过签名校验，但服务端返回 `300011 当前账号存在异常`——还缺风控头。继续往下就是与平台风控对抗：签名函数名随时会变，且拿使用者的账号去撞风控 |
+| 自动滚动 + 点「展开 N 条回复」 | 技术上可行且已实测跑通（96 条评论 4 轮滚动 + 3 轮点击全取）。但它会让用户正在看的页面自己动起来，耗时随评论数增长到数十秒，本质上仍是模拟操作 |
+| 手动「加载全部评论」按钮 | 同上，只是把发起时机交给用户，并未消除对页面的操作 |
+
+代价是明确的：一篇 96 条评论的笔记默认只采到约 20 条。**这个差额必须显示在界面上**（见 13.5），并如实写进 `comments.json` 的 `declared_total` / `collected_count` / `complete`，否则数据使用者会误以为评论是全的。想多采就自己往下翻几屏再点采集——这是唯一的「加载更多」方式。
+
+### 13.2 数据来源
+
+评论与 `note` 是 `noteDetailMap[id]` 下的兄弟字段，**同一次 `executeScript` 一并取回**。分两次注入会引入「两次读取之间页面已经换了笔记」的竞态，而这个竞态没有便宜的消除办法。
+
+`comments` 缺失不是错误：modal 刚打开时它往往还没填。此时 `rawComments` 为 `null`，笔记照常可采，只是不写 `comments.json`。「没读到评论」与「读到了、就是 0 条」是两回事，前者不该留下一个空文件。
+
+### 13.3 comments.json 契约
+
+与 `note.json` 同目录、同样固定 key 顺序、2 空格缩进、末尾换行。
+
+```json
+{
+  "schema_version": 1,
+  "note_id": "68a1b2c3d4e5f6",
+  "declared_total": 96,
+  "collected_count": 20,
+  "complete": false,
+  "has_more": true,
+  "comments": [
+    {
+      "id": "6a6356e8000000002902e848",
+      "content": "…",
+      "published_at": "2026-07-24T20:13:29+08:00",
+      "ip_location": "安徽",
+      "liked_count": 8,
+      "author": { "user_id": "…", "nickname": "…", "avatar_url": "…", "profile_url": "…" },
+      "at_users": [{ "user_id": "…", "nickname": "…" }],
+      "tags": ["is_author", "user_top"],
+      "images": [
+        {
+          "index": 1,
+          "file": "images/comments/6a6356e8000000002902e848-01.webp",
+          "width": 556, "height": 717,
+          "declared_width": 284, "declared_height": 367,
+          "bytes": 26074, "sha256": "…",
+          "source_kind": "WB_DFT", "source_url": "https://…"
+        }
+      ],
+      "sub_comment_count": 14,
+      "sub_comments": [ { "…同上，但没有 sub_comment_count / sub_comments" } ]
+    }
+  ]
+}
+```
+
+几个刻意的决定：
+
+- **`declared_total` 取自笔记的 `interactInfo.commentCount`**，`collected_count` 是主评论 + 已加载回复的条数，`complete` 即两者是否相等。实测这个等式在评论全部加载时精确成立（96/96），可以放心作为判据。
+- **不保留 `raw`。** 与 `note.json` 的做法相反，理由是评论字段少而稳、已被归一化完整覆盖；而 raw 里的 `xsecToken` 会过期、`liked`（当前账号点没点赞）与采集者绑定——两个采集者采同一篇会得到不同的值，只会让 diff 变脏。
+- **回复不再向下嵌套。** 小红书的回复只有一层，给子评论也带上 `sub_comments: []` 纯属噪音。
+- 一条评论只要缺 `id`、`userInfo.userId`，或 `createTime` 无效，就整条丢弃。与 note 同理：`toBeijingIso` 遇到无效时间戳会抛 `RangeError`。
+
+### 13.4 评论配图
+
+写入 `images/comments/{评论id}-{序号}.{ext}`。评论 id 全局唯一，不需要再按主/子评论分目录。
+
+与笔记图的两点不同都是实测出来的：
+
+1. **没有原图。** 评论图不带 `fileId`，url 路径里那串形似 fileId 的 ID 拿去构造 `sns-img-qc` / `ci.xiaohongshu` 地址一律 404。候选只有 `WB_DFT` → `WB_PRV`，且原始 url 是 `http://`，需升到 `https://` 才能在扩展页面里 fetch。
+2. **不做尺寸校验。** 声明尺寸是页面上的展示尺寸（284×367 的图实际是 556×717），拿它校验会让每张评论图都判为「尺寸不符」而全数失败。`declared_*` 照记，但只作参考。
+
+**取不到的配图整条从 `comments.json` 里省略**，不留半截记录——否则读者会照着 `file` 字段去找一个不存在的文件。失败原因通过 `ArchiveResult.commentImageFailures` 报到 UI，但不影响 `status`，不阻止写指针（见 6.1）。
+
+重采时**先清空 `images/comments/` 再写**：评论会增删，残留的旧文件会造成「`comments.json` 没提到这张图，目录里却躺着一张」的不一致。笔记图不需要这步，因为它按固定序号覆盖。
+
+### 13.5 界面
+
+侧边栏在笔记信息里显示 `评论 20/96`，未采全时补一句「只采页面已加载的，往下翻可加载更多」。采集完成的提示里同样带上这个比例。评论配图有失败时单列一行橙色提示，措辞要明确「其余数据完整」，避免被误读成采集失败。

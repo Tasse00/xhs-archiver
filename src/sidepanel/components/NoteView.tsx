@@ -1,4 +1,4 @@
-import type { ExtractedNote } from '../../types';
+import type { ExtractedComments, ExtractedNote } from '../../types';
 import type { PanelState } from '../usePanelState';
 
 /** 本次会话刚完成的一次采集，仅在结果仍对应当前笔记时存在。 */
@@ -7,6 +7,24 @@ export interface ArchiveOutcome {
   status: 'complete' | 'partial';
   path: string;
   failures: string[];
+  comments: ExtractedComments;
+  commentImageFailures: string[];
+}
+
+/**
+ * 只采页面已经加载好的评论，所以「采到 20 条 / 共 96 条」是常态而非故障。
+ * 必须把这个差额直接摆在界面上，否则用户会以为评论采全了。
+ */
+function CommentSummary({ c }: { c: ExtractedComments }) {
+  if (c.declaredTotal === 0 && c.collectedCount === 0) return <>无评论</>;
+  return (
+    <>
+      评论 {c.collectedCount}/{c.declaredTotal}
+      {!c.complete && (
+        <span style={{ opacity: 0.7 }}>（只采页面已加载的，往下翻可加载更多）</span>
+      )}
+    </>
+  );
 }
 
 /**
@@ -86,8 +104,9 @@ export function NoteView({
     );
   }
 
-  const note = state.kind === 'mine' || state.kind === 'ready' ? state.note : null;
-  if (!note) return null;
+  const shown = state.kind === 'mine' || state.kind === 'ready' ? state : null;
+  if (!shown) return null;
+  const note = shown.note;
 
   if (justArchived) {
     const verb = justArchived.mode === 'new' ? '采集' : justArchived.mode === 'update' ? '更新' : '迁移';
@@ -99,8 +118,15 @@ export function NoteView({
             <p style={{ margin: 0, fontWeight: 600 }}>✓ 本次{verb}完成</p>
             <p style={{ margin: '4px 0 0' }}><code>{justArchived.path}</code></p>
             <p style={{ margin: '4px 0 0', fontSize: 12 }}>
-              {note.images.length} 张图已写入。记得在数据仓库里提交这次改动。
+              {note.images.length} 张图已写入，
+              <CommentSummary c={justArchived.comments} />。记得在数据仓库里提交这次改动。
             </p>
+            {justArchived.commentImageFailures.length > 0 && (
+              // 评论配图取不到不影响归档成败，但要说一声，别让人以为图都在
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: 'darkorange' }}>
+                {justArchived.commentImageFailures.length} 张评论配图未取到，其余数据完整。
+              </p>
+            )}
           </div>
         ) : (
           <div style={{ padding: 8, background: 'rgba(200,60,0,0.12)', borderRadius: 4 }}>
@@ -120,6 +146,8 @@ export function NoteView({
       <NoteTitle note={note} />
       <p style={{ fontSize: 12 }}>
         {note.images.length} 张图 · 赞 {note.interact.liked} · 藏 {note.interact.collected}
+        <br />
+        <CommentSummary c={shown.comments} />
       </p>
 
       <label>

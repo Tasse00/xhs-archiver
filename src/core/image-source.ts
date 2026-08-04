@@ -1,4 +1,4 @@
-import type { ExtractedImage, SourceKind } from '../types';
+import type { ExtractedCommentImage, ExtractedImage, SourceKind } from '../types';
 
 export interface Candidate {
   kind: SourceKind;
@@ -41,6 +41,17 @@ export function candidatesFor(img: ExtractedImage): Candidate[] {
   if (img.fileId) {
     for (const host of ORIGINAL_HOSTS) out.push({ kind: 'original', url: host + img.fileId });
   }
+  if (img.urlDefault) out.push({ kind: 'WB_DFT', url: img.urlDefault });
+  if (img.urlPre) out.push({ kind: 'WB_PRV', url: img.urlPre });
+  return out;
+}
+
+/**
+ * 评论图只有派生图可取：它没有 fileId，实测按笔记原图的规则构造出的
+ * 地址（sns-img-qc / ci.xiaohongshu）一律 404，试它只是白费一次请求。
+ */
+export function candidatesForComment(img: ExtractedCommentImage): Candidate[] {
+  const out: Candidate[] = [];
   if (img.urlDefault) out.push({ kind: 'WB_DFT', url: img.urlDefault });
   if (img.urlPre) out.push({ kind: 'WB_PRV', url: img.urlPre });
   return out;

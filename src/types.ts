@@ -32,6 +32,77 @@ export interface RawNote {
   [k: string]: unknown;
 }
 
+/** 评论图没有 fileId，拿不到原图，只有这两个派生地址。 */
+export interface RawCommentPicture {
+  width?: number;
+  height?: number;
+  urlPre?: string;
+  urlDefault?: string;
+  infoList?: { imageScene: string; url: string }[];
+}
+
+export interface RawComment {
+  id: string;
+  content?: string;
+  createTime: number;
+  ipLocation?: string;
+  /** 与 interactInfo 同样是字符串，可能是「1.2万」。 */
+  likeCount?: string;
+  atUsers?: { userId: string; nickname: string }[];
+  pictures?: RawCommentPicture[];
+  /** 平台给的标记，如 is_author、user_top。 */
+  showTags?: string[];
+  subCommentCount?: string;
+  subComments?: RawComment[];
+  userInfo: { userId: string; nickname: string; image: string };
+  [k: string]: unknown;
+}
+
+/** 页面上的 noteDetailMap[id].comments，与 note 同级。 */
+export interface RawComments {
+  list?: RawComment[];
+  cursor?: string;
+  hasMore?: boolean;
+  firstRequestFinish?: boolean;
+  [k: string]: unknown;
+}
+
+export interface ExtractedCommentImage {
+  /** 在所属评论内的序号，从 1 起。 */
+  index: number;
+  declaredWidth: number;
+  declaredHeight: number;
+  urlDefault: string;
+  urlPre: string;
+}
+
+export interface ExtractedComment {
+  id: string;
+  content: string;
+  publishedAt: string;
+  ipLocation: string;
+  likedCount: number;
+  author: ExtractedNote['author'];
+  atUsers: { user_id: string; nickname: string }[];
+  tags: string[];
+  images: ExtractedCommentImage[];
+  /** 页面声明这条有多少回复，未必都加载了。 */
+  subCommentCount: number;
+  /** 只有一层：小红书的回复不再往下嵌套。 */
+  subComments?: ExtractedComment[];
+}
+
+export interface ExtractedComments {
+  /** 笔记 interactInfo.commentCount，含未加载的部分。 */
+  declaredTotal: number;
+  /** 主评论 + 已加载子评论的条数。 */
+  collectedCount: number;
+  complete: boolean;
+  /** 还有整页主评论没加载。 */
+  hasMore: boolean;
+  list: ExtractedComment[];
+}
+
 export interface ExtractedImage {
   index: number;
   fileId: string;
@@ -101,6 +172,47 @@ export interface NoteRecord {
     status: 'complete' | 'partial';
   };
   raw: RawNote;
+}
+
+export interface CommentImageRecord {
+  index: number;
+  file: string;
+  width: number;
+  height: number;
+  declared_width: number;
+  declared_height: number;
+  bytes: number;
+  sha256: string;
+  source_kind: SourceKind;
+  source_url: string;
+}
+
+export interface CommentRecord {
+  id: string;
+  content: string;
+  published_at: string;
+  ip_location: string;
+  liked_count: number;
+  author: ExtractedNote['author'];
+  at_users: { user_id: string; nickname: string }[];
+  tags: string[];
+  images: CommentImageRecord[];
+  /** 只有主评论有这两个字段：回复不会再有回复。 */
+  sub_comment_count?: number;
+  sub_comments?: CommentRecord[];
+}
+
+/** 与 note.json 同目录的 comments.json。 */
+export interface CommentsFile {
+  schema_version: 1;
+  note_id: string;
+  /** 笔记声明的评论总数，含未加载的部分。 */
+  declared_total: number;
+  collected_count: number;
+  /** 采到的是不是全部。只取页面已加载的部分，通常为 false。 */
+  complete: boolean;
+  has_more: boolean;
+  comments: CommentRecord[];
 }
 
 export interface Pointer {

@@ -8,6 +8,7 @@ const diag: PageDiag = {
   currentNoteId: '',
   mapKeys: ['', '6a030b86'],
   entryFound: true,
+  commentCount: 3,
 };
 
 const at = new Date('2026-08-04T09:30:15+08:00');
@@ -15,7 +16,7 @@ const at = new Date('2026-08-04T09:30:15+08:00');
 describe('buildLogEntry', () => {
   it('记录现场关键量', () => {
     const e = buildLogEntry(
-      { kind: 'ready', note: { noteId: 'x' } as never },
+      { kind: 'ready', note: { noteId: 'x' } as never, comments: {} as never },
       'https://www.xiaohongshu.com/explore/6a030b86?xsec_token=SECRET',
       diag,
       at,
@@ -26,6 +27,7 @@ describe('buildLogEntry', () => {
       urlId: '6a030b86',
       mapKeys: 2,
       entryFound: true,
+      comments: 3,
     });
   });
 
@@ -48,7 +50,7 @@ describe('buildLogEntry', () => {
 
   it('没有诊断信息时不炸', () => {
     const e = buildLogEntry({ kind: 'not_xhs' }, 'https://example.com/', null, at);
-    expect(e).toMatchObject({ pathname: '—', urlId: '—', mapKeys: 0, entryFound: false });
+    expect(e).toMatchObject({ pathname: '—', urlId: '—', mapKeys: 0, entryFound: false, comments: 0 });
   });
 
   it('带出失败详情', () => {
@@ -85,7 +87,7 @@ describe('describeOutcome', () => {
 
 describe('appendLog', () => {
   const entry = (at: string): LogEntry =>
-    ({ at, outcome: 'x', tabUrl: '', pathname: '', urlId: '', currentNoteId: '', mapKeys: 0, entryFound: false });
+    ({ at, outcome: 'x', tabUrl: '', pathname: '', urlId: '', currentNoteId: '', mapKeys: 0, entryFound: false, comments: 0 });
 
   it('最新的排最前', () => {
     const log = appendLog(appendLog([], entry('09:00:00')), entry('09:00:01'));

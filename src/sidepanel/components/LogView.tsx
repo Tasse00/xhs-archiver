@@ -45,7 +45,7 @@ export function LogView({ log, onRefresh }: { log: LogEntry[]; onRefresh(): void
             </div>
             <div style={{ opacity: 0.75 }}>
               urlId: {e.urlId} · currentNoteId: {e.currentNoteId} · map: {e.mapKeys} 条 ·{' '}
-              {e.entryFound ? '命中' : '未命中'}
+              {e.entryFound ? '命中' : '未命中'} · 评论 {e.comments} 条
             </div>
             {e.error && <div style={{ color: 'crimson' }}>{e.error}</div>}
           </li>

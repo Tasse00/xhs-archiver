@@ -84,7 +84,39 @@ describe('readNoteFromPage', () => {
       currentNoteId: 'stale',
       mapKeys: ['', 'undefined', '6a030b86'],
       entryFound: true,
+      commentCount: 0,
     });
+  });
+
+  // 评论与 note 是 noteDetailMap[id] 下的兄弟字段，同一次注入一并取回，
+  // 免得为了评论再注入一次、还要处理两次读取之间页面已经换了笔记的情况。
+  it('同时带回 comments', () => {
+    const comments = { list: [{ id: 'c1' }, { id: 'c2' }], hasMore: true, cursor: 'x' };
+    setState({
+      note: {
+        currentNoteId: { _value: '6a030b86' },
+        noteDetailMap: { '6a030b86': { note: { noteId: '6a030b86' }, comments } },
+      },
+    });
+    const r = readNoteFromPage();
+    expect(r).toMatchObject({ ok: true, rawComments: { hasMore: true } });
+    expect(r.ok && r.rawComments?.list).toHaveLength(2);
+    expect(r.diag.commentCount).toBe(2);
+  });
+
+  // 评论是附属数据：modal 刚打开时 comments 往往还不存在，
+  // 这时笔记本身照常可采，不能因为没有评论就整篇读不出来。
+  it('没有 comments 时笔记照常读出', () => {
+    setState({
+      note: {
+        currentNoteId: { _value: '6a030b86' },
+        noteDetailMap: { '6a030b86': { note: { noteId: '6a030b86' } } },
+      },
+    });
+    const r = readNoteFromPage();
+    expect(r.ok).toBe(true);
+    expect(r.ok && r.rawComments).toBeNull();
+    expect(r.diag.commentCount).toBe(0);
   });
 
   // 抛出去会让 executeScript 的 result 变成 undefined，现场信息就全丢了。

@@ -7,6 +7,7 @@ import { writePointer } from '../../src/core/index-store';
 import type { Pointer } from '../../src/types';
 import imageNote from '../fixtures/note-image.json';
 import videoNote from '../fixtures/note-video.json';
+import rawComments from '../fixtures/note-comments.json';
 
 const NOTE_ID = '6a030b860000000036000201';
 const NOTE_URL = `https://www.xiaohongshu.com/explore/${NOTE_ID}?xsec_token=X`;
@@ -18,6 +19,7 @@ function diagOf(over: Partial<PageDiag> = {}): PageDiag {
     currentNoteId: NOTE_ID,
     mapKeys: [NOTE_ID],
     entryFound: true,
+    commentCount: 3,
     ...over,
   };
 }
@@ -37,7 +39,12 @@ function baseInput(over: Partial<ResolveInput> = {}): ResolveInput {
     store: createStore(memRoot()),
     collector: 'zach',
     tabUrl: NOTE_URL,
-    readNote: async () => ({ ok: true, raw: imageNote as never, diag: diagOf() }),
+    readNote: async () => ({
+      ok: true,
+      raw: imageNote as never,
+      rawComments: rawComments as never,
+      diag: diagOf(),
+    }),
     ...over,
   };
 }
@@ -134,14 +141,14 @@ describe('resolvePanelState 优先级', () => {
   it('数据不完整时报 incomplete_data', async () => {
     const half = { ...(imageNote as Record<string, unknown>), time: undefined };
     const s = await resolvePanelState(baseInput({
-      readNote: async () => ({ ok: true, raw: half as never, diag: diagOf() }),
+      readNote: async () => ({ ok: true, raw: half as never, rawComments: null, diag: diagOf() }),
     }));
     expect(s).toMatchObject({ kind: 'unreadable', reason: 'incomplete_data' });
   });
 
   it('视频笔记被拒绝', async () => {
     const s = await resolvePanelState(baseInput({
-      readNote: async () => ({ ok: true, raw: videoNote as never, diag: diagOf() }),
+      readNote: async () => ({ ok: true, raw: videoNote as never, rawComments: null, diag: diagOf() }),
     }));
     expect(s.kind).toBe('video_rejected');
   });
@@ -167,6 +174,38 @@ describe('resolvePanelState 优先级', () => {
     expect(s.kind).toBe('ready');
     if (s.kind !== 'ready') throw new Error();
     expect(s.note.noteId).toBe(NOTE_ID);
+  });
+
+  it('就绪状态带上归一化后的评论', async () => {
+    const s = await resolvePanelState(baseInput());
+    if (s.kind !== 'ready') throw new Error();
+    // declaredTotal 取自笔记的 interactInfo.commentCount（fixture 是 "3272"）
+    expect(s.comments.declaredTotal).toBe(3272);
+    expect(s.comments.list).toHaveLength(3);
+    expect(s.comments.collectedCount).toBe(4);
+  });
+
+  it('自己已采集时同样带上评论', async () => {
+    const store = createStore(memRoot());
+    await writePointer(store, ptr('zach'));
+    const s = await resolvePanelState(baseInput({ store }));
+    if (s.kind !== 'mine') throw new Error();
+    expect(s.comments.list).toHaveLength(3);
+  });
+
+  // 评论读不到时笔记照常可采，只是 comments 为空集。
+  it('页面没有评论数据时不影响就绪判定', async () => {
+    const s = await resolvePanelState(baseInput({
+      readNote: async () => ({
+        ok: true,
+        raw: imageNote as never,
+        rawComments: null,
+        diag: diagOf({ commentCount: 0 }),
+      }),
+    }));
+    if (s.kind !== 'ready') throw new Error();
+    expect(s.comments.list).toEqual([]);
+    expect(s.comments.collectedCount).toBe(0);
   });
 
   it('存在多个指针时带出重复提示', async () => {

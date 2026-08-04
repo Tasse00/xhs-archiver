@@ -12,6 +12,8 @@ export interface LogEntry {
   currentNoteId: string;
   mapKeys: number;
   entryFound: boolean;
+  /** 页面上已加载的主评论条数。 */
+  comments: number;
   error?: string;
 }
 
@@ -49,6 +51,7 @@ export function buildLogEntry(
     currentNoteId: diag?.currentNoteId === '' ? '(空)' : diag?.currentNoteId ?? '—',
     mapKeys: diag?.mapKeys.length ?? 0,
     entryFound: diag?.entryFound ?? false,
+    comments: diag?.commentCount ?? 0,
     ...(diag?.error ?? detail ? { error: diag?.error ?? detail } : {}),
   };
 }

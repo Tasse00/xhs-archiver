@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { serializeNote, serializePointer, sortKeysDeep } from '../../src/core/serialize';
-import type { NoteRecord, Pointer } from '../../src/types';
+import { serializeComments, serializeNote, serializePointer, sortKeysDeep } from '../../src/core/serialize';
+import type { CommentsFile, NoteRecord, Pointer } from '../../src/types';
 
 const base: NoteRecord = {
   schema_version: 1,
@@ -63,6 +63,71 @@ describe('sortKeysDeep', () => {
   it('null 与原始值原样返回', () => {
     expect(sortKeysDeep(null)).toBeNull();
     expect(sortKeysDeep(5)).toBe(5);
+  });
+});
+
+describe('serializeComments', () => {
+  const file: CommentsFile = {
+    schema_version: 1,
+    note_id: 'abc',
+    declared_total: 96,
+    collected_count: 2,
+    complete: false,
+    has_more: true,
+    comments: [{
+      id: 'c1',
+      content: '正文',
+      published_at: '2026-07-24T20:13:29+08:00',
+      ip_location: '安徽',
+      liked_count: 8,
+      author: { user_id: 'u', nickname: 'n', avatar_url: 'a', profile_url: 'p' },
+      at_users: [{ user_id: 'u2', nickname: 'n2' }],
+      tags: ['is_author'],
+      images: [{
+        index: 1, file: 'images/comments/c1-01.webp',
+        width: 556, height: 717, declared_width: 284, declared_height: 367,
+        bytes: 26074, sha256: 'deadbeef', source_kind: 'WB_DFT', source_url: 'https://x/d',
+      }],
+      sub_comment_count: 1,
+      sub_comments: [{
+        id: 'c1s1',
+        content: '回复',
+        published_at: '2026-07-24T21:50:00+08:00',
+        ip_location: '上海',
+        liked_count: 0,
+        author: { user_id: 'u3', nickname: 'n3', avatar_url: 'a3', profile_url: 'p3' },
+        at_users: [],
+        tags: [],
+        images: [],
+      }],
+    }],
+  };
+
+  it('顶层与评论的 key 顺序固定，末尾换行', () => {
+    const out = serializeComments(file);
+    expect(out.endsWith('}\n')).toBe(true);
+    const parsed = JSON.parse(out);
+    expect(Object.keys(parsed)).toEqual([
+      'schema_version', 'note_id', 'declared_total', 'collected_count',
+      'complete', 'has_more', 'comments',
+    ]);
+    expect(Object.keys(parsed.comments[0])).toEqual([
+      'id', 'content', 'published_at', 'ip_location', 'liked_count',
+      'author', 'at_users', 'tags', 'images', 'sub_comment_count', 'sub_comments',
+    ]);
+  });
+
+  // 回复不会再有回复，多输出两个恒定字段只是噪音。
+  it('子评论不带 sub_comment_count / sub_comments', () => {
+    const sub = JSON.parse(serializeComments(file)).comments[0].sub_comments[0];
+    expect(Object.keys(sub)).toEqual([
+      'id', 'content', 'published_at', 'ip_location', 'liked_count',
+      'author', 'at_users', 'tags', 'images',
+    ]);
+  });
+
+  it('相同输入两次输出完全一致', () => {
+    expect(serializeComments(file)).toBe(serializeComments(file));
   });
 });
 

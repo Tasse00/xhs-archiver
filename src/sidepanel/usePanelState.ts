@@ -1,6 +1,7 @@
-import type { ExtractedNote, Pointer, RawNote } from '../types';
+import type { ExtractedComments, ExtractedNote, Pointer, RawNote } from '../types';
 import type { Store } from '../core/store';
 import { extract } from '../core/extractor';
+import { extractComments } from '../core/comments';
 import { checkNote } from '../core/archiver';
 import { type PageDiag, type PageReadFailure, type PageReadResult } from '../page/read-note';
 
@@ -26,8 +27,14 @@ export type PanelState =
   | { kind: 'unreadable'; reason: UnreadableReason; detail?: string }
   | { kind: 'video_rejected' }
   | { kind: 'blocked_by_other'; pointers: Pointer[] }
-  | { kind: 'mine'; note: ExtractedNote; pointer: Pointer; duplicates: Pointer[] }
-  | { kind: 'ready'; note: ExtractedNote };
+  | {
+      kind: 'mine';
+      note: ExtractedNote;
+      comments: ExtractedComments;
+      pointer: Pointer;
+      duplicates: Pointer[];
+    }
+  | { kind: 'ready'; note: ExtractedNote; comments: ExtractedComments };
 
 export interface ResolveInput {
   hasRoot: boolean;
@@ -66,10 +73,20 @@ export async function resolvePanelState(input: ResolveInput): Promise<PanelState
       : { kind: 'unreadable', reason: 'incomplete_data' };
   }
 
+  // 评论只取页面已经加载好的那部分，读不到就是空集——它不参与任何判定，
+  // 不能因为评论没准备好就把一篇本可采集的笔记挡在外面。
+  const comments = extractComments(read.rawComments, ext.note.interact.comment);
+
   const check = await checkNote(input.store, ext.note.noteId, input.collector);
   if (check.state === 'others') return { kind: 'blocked_by_other', pointers: check.pointers };
   if (check.state === 'mine') {
-    return { kind: 'mine', note: ext.note, pointer: check.pointer, duplicates: check.duplicates };
+    return {
+      kind: 'mine',
+      note: ext.note,
+      comments,
+      pointer: check.pointer,
+      duplicates: check.duplicates,
+    };
   }
-  return { kind: 'ready', note: ext.note };
+  return { kind: 'ready', note: ext.note, comments };
 }

@@ -1,4 +1,4 @@
-import type { NoteRecord, Pointer } from '../types';
+import type { CommentImageRecord, CommentRecord, CommentsFile, NoteRecord, Pointer } from '../types';
 
 /**
  * 递归按 key 排序。实测 note 的字段顺序在不同入口（独立页 / 首页 modal /
@@ -64,6 +64,63 @@ export function serializeNote(n: NoteRecord): string {
       status: n.archive.status,
     },
     raw: sortKeysDeep(n.raw),
+  });
+}
+
+function commentImage(i: CommentImageRecord) {
+  return {
+    index: i.index,
+    file: i.file,
+    width: i.width,
+    height: i.height,
+    declared_width: i.declared_width,
+    declared_height: i.declared_height,
+    bytes: i.bytes,
+    sha256: i.sha256,
+    source_kind: i.source_kind,
+    source_url: i.source_url,
+  };
+}
+
+/** withSub 为假时省掉 sub_* 两个字段——回复不会再有回复。 */
+function comment(c: CommentRecord, withSub: boolean): unknown {
+  const base = {
+    id: c.id,
+    content: c.content,
+    published_at: c.published_at,
+    ip_location: c.ip_location,
+    liked_count: c.liked_count,
+    author: {
+      user_id: c.author.user_id,
+      nickname: c.author.nickname,
+      avatar_url: c.author.avatar_url,
+      profile_url: c.author.profile_url,
+    },
+    at_users: c.at_users.map((u) => ({ user_id: u.user_id, nickname: u.nickname })),
+    tags: c.tags,
+    images: c.images.map(commentImage),
+  };
+  if (!withSub) return base;
+  return {
+    ...base,
+    sub_comment_count: c.sub_comment_count ?? 0,
+    sub_comments: (c.sub_comments ?? []).map((s) => comment(s, false)),
+  };
+}
+
+/**
+ * 与 note.json 一样固定 key 顺序。评论不留 raw：字段少而稳，
+ * 且 raw 里的 xsecToken 会过期、liked 与采集者绑定，只会让 diff 变脏。
+ */
+export function serializeComments(f: CommentsFile): string {
+  return stringify({
+    schema_version: f.schema_version,
+    note_id: f.note_id,
+    declared_total: f.declared_total,
+    collected_count: f.collected_count,
+    complete: f.complete,
+    has_more: f.has_more,
+    comments: f.comments.map((c) => comment(c, true)),
   });
 }
 

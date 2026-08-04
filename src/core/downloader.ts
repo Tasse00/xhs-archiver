@@ -1,5 +1,5 @@
-import type { ExtractedImage, SourceKind } from '../types';
-import { candidatesFor, extensionFor, isDecodable } from './image-source';
+import type { ExtractedCommentImage, ExtractedImage, SourceKind } from '../types';
+import { type Candidate, candidatesFor, candidatesForComment, extensionFor, isDecodable } from './image-source';
 
 export interface Deps {
   fetch: typeof fetch;
@@ -8,7 +8,8 @@ export interface Deps {
 }
 
 export interface FetchedImage {
-  bytes: Uint8Array;
+  /** 显式绑定 ArrayBuffer：不写的话默认是 ArrayBufferLike，落盘时不认 BlobPart。 */
+  bytes: Uint8Array<ArrayBuffer>;
   ext: string;
   sourceKind: SourceKind;
   sourceUrl: string;
@@ -31,14 +32,53 @@ export const defaultDeps: Deps = {
   },
 };
 
+interface FetchPlan {
+  candidates: Candidate[];
+  /** 解码失败时的兜底尺寸。 */
+  fallbackWidth: number;
+  fallbackHeight: number;
+  /** 声明尺寸可信时才校验；评论图的声明尺寸是展示尺寸，不可信。 */
+  expectedDims: { width: number; height: number } | null;
+  /** 全部候选失败时的错误抬头。 */
+  label: string;
+}
+
 /**
  * 按候选顺序尝试，返回第一个可用的。
  * 原图必须通过尺寸校验；HEIC 无法在 Chrome 中解码，直接跳过改用降级图。
  */
 export async function downloadImage(img: ExtractedImage, deps: Deps): Promise<FetchedImage> {
+  return fetchFirstUsable(deps, {
+    candidates: candidatesFor(img),
+    fallbackWidth: img.declaredWidth,
+    fallbackHeight: img.declaredHeight,
+    expectedDims: { width: img.declaredWidth, height: img.declaredHeight },
+    label: `第 ${img.index} 张图片`,
+  });
+}
+
+/**
+ * 评论图。与笔记图的两点不同都是实测出来的：
+ * - 没有 fileId，构造出的原图地址一律 404，只有 WB_DFT / WB_PRV 可用；
+ * - 声明尺寸是展示尺寸（284x367 的图实际 556x717），拿来校验会全数失败。
+ */
+export async function downloadCommentImage(
+  img: ExtractedCommentImage,
+  deps: Deps,
+): Promise<FetchedImage> {
+  return fetchFirstUsable(deps, {
+    candidates: candidatesForComment(img),
+    fallbackWidth: img.declaredWidth,
+    fallbackHeight: img.declaredHeight,
+    expectedDims: null,
+    label: `评论图 ${img.index}`,
+  });
+}
+
+async function fetchFirstUsable(deps: Deps, plan: FetchPlan): Promise<FetchedImage> {
   const reasons: string[] = [];
 
-  for (const c of candidatesFor(img)) {
+  for (const c of plan.candidates) {
     let res: Response;
     try {
       res = await deps.fetch(c.url);
@@ -68,7 +108,7 @@ export async function downloadImage(img: ExtractedImage, deps: Deps): Promise<Fe
     const bytes = new Uint8Array(buf);
     const blob = new Blob([bytes], { type: contentType });
 
-    let dim = { width: img.declaredWidth, height: img.declaredHeight };
+    let dim = { width: plan.fallbackWidth, height: plan.fallbackHeight };
     if (isDecodable(contentType)) {
       try {
         dim = await deps.decode(blob);
@@ -77,7 +117,8 @@ export async function downloadImage(img: ExtractedImage, deps: Deps): Promise<Fe
         continue;
       }
       // 只有原图需要与声明尺寸一致；降级图本就是 1080 宽的派生图。
-      if (c.kind === 'original' && (dim.width !== img.declaredWidth || dim.height !== img.declaredHeight)) {
+      const want = plan.expectedDims;
+      if (c.kind === 'original' && want && (dim.width !== want.width || dim.height !== want.height)) {
         reasons.push(`${c.url} 尺寸 ${dim.width}x${dim.height} 与声明不符`);
         continue;
       }
@@ -94,5 +135,5 @@ export async function downloadImage(img: ExtractedImage, deps: Deps): Promise<Fe
     };
   }
 
-  throw new Error(`第 ${img.index} 张图片全部候选均失败：${reasons.join('；')}`);
+  throw new Error(`${plan.label}全部候选均失败：${reasons.join('；')}`);
 }

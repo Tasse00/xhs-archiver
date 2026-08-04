@@ -1,4 +1,4 @@
-import type { RawNote } from '../types';
+import type { RawComments, RawNote } from '../types';
 
 /** 每次读取都回传的现场快照，用于在侧边栏显示工作日志。 */
 export interface PageDiag {
@@ -8,6 +8,8 @@ export interface PageDiag {
   currentNoteId: string | null;
   mapKeys: string[];
   entryFound: boolean;
+  /** 页面上已加载的主评论条数。 */
+  commentCount: number;
   /** 页面内抛出的异常原文。 */
   error?: string;
 }
@@ -21,7 +23,7 @@ export type PageReadFailure =
   | 'page_error';
 
 export type PageReadResult =
-  | { ok: true; raw: RawNote; diag: PageDiag }
+  | { ok: true; raw: RawNote; rawComments: RawComments | null; diag: PageDiag }
   | { ok: false; reason: PageReadFailure; detail?: string; diag: PageDiag };
 
 /**
@@ -30,13 +32,16 @@ export type PageReadResult =
  * 约束：函数体会被序列化后在页面上下文运行，**不能引用本模块的任何外部变量**
  * （包括 import 的类型以外的一切），正则、常量都得写在函数体里。
  *
- * 三条实测约束：
+ * 四条实测约束：
  * 1. 定位以页面自己的 location 为准。currentNoteId._value 会在 modal 关闭后被
  *    重置为空字符串，而侧边栏拿到的 tab.url 又可能滞后于 SPA 的实际地址，
  *    两者都会指向错误的笔记。currentNoteId 仅在 URL 上没有 id 时兜底。
- * 2. 只取 noteDetailMap[id].note 子对象：其父层含 dep/computed 循环引用。
+ * 2. 只取 noteDetailMap[id] 下的 note 与 comments 两个子对象：其父层含
+ *    dep/computed 循环引用，整体不可序列化，穿不过扩展边界。
  * 3. 全程 try/catch 并且始终返回值。抛出去会让 executeScript 的 result 变成
  *    undefined，调用方只能看到「无返回值」，等于把现场信息全丢了。
+ * 4. 只读页面自己已经填好的评论——不滚动、不点「展开 N 条回复」。本函数在
+ *    用户正在看的页面上运行，任何模拟操作都会让页面在他眼前动起来。
  */
 export function readNoteFromPage(): PageReadResult {
   const diag: PageDiag = {
@@ -45,6 +50,7 @@ export function readNoteFromPage(): PageReadResult {
     currentNoteId: null,
     mapKeys: [],
     entryFound: false,
+    commentCount: 0,
   };
 
   try {
@@ -54,7 +60,10 @@ export function readNoteFromPage(): PageReadResult {
     if (!state || typeof state !== 'object') return { ok: false, reason: 'no_state', diag };
 
     const noteStore = state.note as
-      | { currentNoteId?: { _value?: unknown }; noteDetailMap?: Record<string, { note?: unknown }> }
+      | {
+          currentNoteId?: { _value?: unknown };
+          noteDetailMap?: Record<string, { note?: unknown; comments?: unknown }>;
+        }
       | undefined;
     if (!noteStore) return { ok: false, reason: 'no_note', diag };
 
@@ -75,10 +84,18 @@ export function readNoteFromPage(): PageReadResult {
     diag.entryFound = Boolean(entry && entry.note);
     if (!entry || !entry.note) return { ok: false, reason: 'no_note', diag };
 
+    // 评论缺失不是错误：modal 刚打开时 comments 往往还没填。笔记本身可采就够了。
+    let rawComments: RawComments | null = null;
+    const rawList = (entry.comments as { list?: unknown } | undefined)?.list;
+    if (entry.comments && Array.isArray(rawList)) {
+      rawComments = JSON.parse(JSON.stringify(entry.comments)) as RawComments;
+      diag.commentCount = rawList.length;
+    }
+
     // JSON round-trip 而非 structuredClone：产物是纯 JSON，既能穿透 Vue 的响应式
     // 包装，也保证一定能跨扩展边界（structuredClone 的产物不一定能，实测出现过
     // 结果在传回时丢失、调用方只拿到 undefined 的情况）。落盘本来就是 JSON。
-    return { ok: true, raw: JSON.parse(JSON.stringify(entry.note)) as RawNote, diag };
+    return { ok: true, raw: JSON.parse(JSON.stringify(entry.note)) as RawNote, rawComments, diag };
   } catch (e) {
     diag.error = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
     return { ok: false, reason: 'page_error', detail: diag.error, diag };
@@ -97,6 +114,7 @@ const EMPTY_DIAG: PageDiag = {
   currentNoteId: null,
   mapKeys: [],
   entryFound: false,
+  commentCount: 0,
 };
 
 /**
