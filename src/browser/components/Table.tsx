@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { noteKeyOf } from '../../core/browse/scope';
+import { noteKeyOf, type SortKey } from '../../core/browse/scope';
+import type { Sort } from '../../core/browse/search';
 import type { NoteRef, RowState } from '../../core/browse/types';
 import { visibleRange } from '../../core/browse/virtual';
 import type { ThumbSize } from '../hooks/useThumbnail';
@@ -18,6 +19,7 @@ function Cover({ url }: { url: string | undefined }) {
 
 export function Table({
   refs, stateOf, request, thumbUrl, forget, wide, selectedKey, onSelect,
+  sort, onSort, showCommentCol, commentCount,
 }: {
   refs: NoteRef[];
   stateOf(ref: NoteRef): RowState;
@@ -27,6 +29,10 @@ export function Table({
   wide: boolean;
   selectedKey: string | null;
   onSelect(ref: NoteRef): void;
+  sort: Sort;
+  onSort(key: SortKey): void;
+  showCommentCol: boolean;
+  commentCount(ref: NoteRef): number | undefined;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -57,19 +63,29 @@ export function Table({
     shown.current = slice;
   });
 
+  const th = (key: SortKey, label: string, cls: string) => (
+    <span
+      className={`${cls} th${sort.key === key ? ' on' : ''}`}
+      onClick={() => onSort(key)}
+    >
+      {label}{sort.key === key ? (sort.desc ? ' ↓' : ' ↑') : ''}
+    </span>
+  );
+
   return (
     <div className="bw-table">
       <div className={`bw-head${wide ? ' wide' : ''}`}>
         <span className="c-cover" />
-        <span className="c-title">标题</span>
-        <span className="c-author">作者</span>
-        <span className="c-num">赞</span>
-        <span className="c-num">藏</span>
-        <span className="c-num">评</span>
-        {wide && <span className="c-num">享</span>}
-        {wide && <span className="c-num">图片</span>}
-        {wide && <span className="c-author">采集者</span>}
-        <span className="c-time">采集时间</span>
+        {th('title', '标题', 'c-title')}
+        {th('authorNickname', '作者', 'c-author')}
+        {th('liked', '赞', 'c-num')}
+        {th('collected', '藏', 'c-num')}
+        {th('comment', '评', 'c-num')}
+        {showCommentCol && <span className="c-num">已采</span>}
+        {wide && th('share', '享', 'c-num')}
+        {wide && th('imageCount', '图片', 'c-num')}
+        {wide && th('collector', '采集者', 'c-author')}
+        {th('lastArchivedAt', '采集时间', 'c-time')}
         {wide && <span className="c-path">落盘路径</span>}
       </div>
 
@@ -108,6 +124,7 @@ export function Table({
                 <span className="c-num">{num(m.liked)}</span>
                 <span className="c-num">{num(m.collected)}</span>
                 <span className="c-num">{num(m.comment)}</span>
+                {showCommentCol && <span className="c-num">{commentCount(ref) ?? '…'}</span>}
                 {wide && <span className="c-num">{num(m.share)}</span>}
                 {wide && <span className="c-num">{m.imageCount}</span>}
                 {wide && <span className="c-author">{m.collector}</span>}
