@@ -6,7 +6,7 @@ import { noteKeyOf } from '../../core/browse/scope';
 import type { ReadStore } from '../../core/read-store';
 import type { CommentRecord } from '../../types';
 import type { ThumbSize } from '../hooks/useThumbnail';
-import { Lightbox } from './Lightbox';
+import { Lightbox, type LightboxImage } from './Lightbox';
 
 function qualityText(q: QualityReport): { tone: string; text: string } | null {
   switch (q.state.kind) {
@@ -25,17 +25,90 @@ function qualityText(q: QualityReport): { tone: string; text: string } | null {
   }
 }
 
-function Comment({ c, depth }: { c: CommentRecord; depth: number }) {
+const COMMENT_TAG_TEXT: Record<string, string> = {
+  is_author: '作者',
+  user_top: '置顶',
+};
+
+function commentTime(iso: string): string {
+  return iso.length >= 16 ? iso.slice(5, 16).replace('T', ' ') : iso;
+}
+
+function authorInitial(nickname: string): string {
+  return Array.from(nickname.trim())[0] ?? '·';
+}
+
+export function CommentCard({
+  comment, noteRef, thumbUrl, onOpenImages, isReply = false,
+}: {
+  comment: CommentRecord;
+  noteRef: NoteRef;
+  thumbUrl(ref: NoteRef, file: string, size: ThumbSize): string | undefined;
+  onOpenImages(images: LightboxImage[], index: number): void;
+  isReply?: boolean;
+}) {
+  const replies = comment.sub_comments ?? [];
+  const replyTotal = Math.max(comment.sub_comment_count ?? 0, replies.length);
+
   return (
-    <>
-      <div className="bw-cmt" style={{ paddingLeft: depth * 14 }}>
-        <b>{c.author.nickname}</b>
-        {c.content && <span>：{c.content}</span>}
-        {c.images.length > 0 && <span className="bw-dim">［{c.images.length} 张配图］</span>}
-        <span className="bw-dim"> ❤ {c.liked_count}</span>
+    <article className={`bw-comment-card${isReply ? ' reply' : ''}`}>
+      <div className="bw-comment-avatar" aria-hidden="true">{authorInitial(comment.author.nickname)}</div>
+      <div className="bw-comment-main">
+        <header className="bw-comment-line">
+          <span className="bw-comment-author">{comment.author.nickname}</span>
+          {comment.tags.map((tag) => (
+            <span className={`bw-comment-tag ${tag}`} key={tag}>{COMMENT_TAG_TEXT[tag] ?? tag}</span>
+          ))}
+        </header>
+
+        <p className={`bw-comment-content${comment.content ? '' : ' empty'}`}>
+          {comment.content || '无文字内容'}
+        </p>
+
+        {comment.images.length > 0 && (
+          <div className="bw-comment-images">
+            {comment.images.map((img, index) => {
+              const url = thumbUrl(noteRef, img.file, 320);
+              return (
+                <button
+                  type="button"
+                  className="bw-comment-image"
+                  key={img.file}
+                  onClick={() => onOpenImages(comment.images, index)}
+                  aria-label={`查看评论配图 ${index + 1} / ${comment.images.length}`}
+                >
+                  {url ? <img src={url} alt="" /> : <span>图片</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <footer className="bw-comment-meta">
+          <span>{commentTime(comment.published_at)}</span>
+          {comment.ip_location && <span>IP {comment.ip_location}</span>}
+          {comment.liked_count > 0 && <span className="bw-comment-likes">♥ {comment.liked_count.toLocaleString()}</span>}
+        </footer>
+
+        {!isReply && replyTotal > 0 && (
+          <div className="bw-comment-thread">
+            {replies.map((reply) => (
+              <CommentCard
+                key={reply.id}
+                comment={reply}
+                noteRef={noteRef}
+                thumbUrl={thumbUrl}
+                onOpenImages={onOpenImages}
+                isReply
+              />
+            ))}
+            {replyTotal > replies.length && (
+              <div className="bw-comment-reply-count">已收录 {replies.length} / {replyTotal} 条回复</div>
+            )}
+          </div>
+        )}
       </div>
-      {(c.sub_comments ?? []).map((s) => <Comment key={s.id} c={s} depth={depth + 1} />)}
-    </>
+    </article>
   );
 }
 
@@ -51,7 +124,7 @@ export function DetailPane({
 }) {
   const [comments, setComments] = useState<CommentsResult>({ kind: 'none' });
   const [quality, setQuality] = useState<QualityReport | null>(null);
-  const [lightbox, setLightbox] = useState<number | null>(null);
+  const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number } | null>(null);
 
   const key = noteKeyOf(noteRef);
   useEffect(() => {
@@ -79,7 +152,7 @@ export function DetailPane({
             <span
               key={img.file}
               className={`bw-thumb${missing.includes(img.file) ? ' missing' : ''}`}
-              onClick={() => setLightbox(i)}
+              onClick={() => setLightbox({ images: detail.images, index: i })}
             >
               {(() => {
                 const u = missing.includes(img.file) ? undefined : thumbUrl(noteRef, img.file, 320);
@@ -109,26 +182,46 @@ export function DetailPane({
           · 第 {meta.archiveCount} 次 · {key}/
         </p>
 
-        <hr />
-        {comments.kind === 'none' && <p className="bw-dim">未采集评论</p>}
-        {comments.kind === 'error' && <p className="bw-note bad">{comments.reason}</p>}
-        {comments.kind === 'ok' && (
-          <>
-            <p>
-              <b>评论 {comments.file.collected_count} / {comments.file.declared_total}</b>
-              <span className="bw-dim">（采集时页面只加载了这些）</span>
-            </p>
-            {comments.file.comments.map((c) => <Comment key={c.id} c={c} depth={0} />)}
-          </>
-        )}
+        <section className="bw-comments">
+          {comments.kind === 'none' && <p className="bw-comments-empty">未采集评论</p>}
+          {comments.kind === 'error' && <p className="bw-note bad">{comments.reason}</p>}
+          {comments.kind === 'ok' && (
+            <>
+              <header className="bw-comments-head">
+                <div>
+                  <strong>评论</strong>
+                  <span>{comments.file.collected_count.toLocaleString()} / {comments.file.declared_total.toLocaleString()} 已采集</span>
+                </div>
+                <span className={`bw-comments-state${comments.file.complete ? ' complete' : ''}`}>
+                  {comments.file.complete ? '完整' : '页面已加载部分'}
+                </span>
+              </header>
+              <div className="bw-comments-progress" aria-hidden="true">
+                <i style={{ width: `${Math.min(100, comments.file.declared_total === 0 ? 100 : comments.file.collected_count / comments.file.declared_total * 100)}%` }} />
+              </div>
+              <div className="bw-comment-list">
+                {comments.file.comments.map((comment) => (
+                  <CommentCard
+                    key={comment.id}
+                    comment={comment}
+                    noteRef={noteRef}
+                    thumbUrl={thumbUrl}
+                    onOpenImages={(images, index) => setLightbox({ images, index })}
+                  />
+                ))}
+                {comments.file.comments.length === 0 && <p className="bw-comments-empty">评论文件中没有已加载内容</p>}
+              </div>
+            </>
+          )}
+        </section>
       </div>
 
       {lightbox !== null && (
         <Lightbox
           noteRef={noteRef}
-          images={detail.images}
-          index={lightbox}
-          onIndex={setLightbox}
+          images={lightbox.images}
+          index={lightbox.index}
+          onIndex={(index) => setLightbox((current) => current ? { ...current, index } : null)}
           onClose={() => setLightbox(null)}
           thumbUrl={thumbUrl}
         />

@@ -3,11 +3,13 @@ import type { ImageRecord } from '../../types';
 import type { NoteRef } from '../../core/browse/types';
 import type { ThumbSize } from '../hooks/useThumbnail';
 
+export type LightboxImage = Pick<ImageRecord, 'file' | 'width' | 'height' | 'bytes' | 'source_kind'>;
+
 export function Lightbox({
   noteRef, images, index, onIndex, onClose, thumbUrl,
 }: {
   noteRef: NoteRef;
-  images: ImageRecord[];
+  images: LightboxImage[];
   index: number;
   onIndex(i: number): void;
   onClose(): void;
