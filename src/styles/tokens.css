@@ -1,0 +1,62 @@
+/*
+ * 侧边栏样式。用 token 而不是散落的字面量，是因为深浅两套主题必须成对维护：
+ * 组件只引用 var(--x)，换主题只重定义 token。
+ */
+:root {
+  --paper:   #FBF7F7;
+  --surface: #FFFFFF;
+  --sunk:    #F4EEEF;
+  --line:    #E8DEDF;
+  --line-2:  #D6C9CA;
+  --ink:     #1B1417;
+  --ink-2:   #574A4D;
+  --ink-3:   #8B7B7E;
+  /* 小红书红只用来标状态，不做主按钮——通篇红会让人分不清哪个才是要点的 */
+  --accent:  #E4162F;
+  --accent-w:#FDECEE;
+  --ok:      #16794F;
+  --ok-w:    #E6F3ED;
+  --warn:    #8F5A0A;
+  --warn-w:  #FAF0DF;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper:   #131011;
+    --surface: #1C1719;
+    --sunk:    #221C1E;
+    --line:    #2E2628;
+    --line-2:  #443A3C;
+    --ink:     #F3EBEC;
+    --ink-2:   #B7A9AC;
+    --ink-3:   #857779;
+    --accent:  #FF5468;
+    --accent-w:#3A1F24;
+    --ok:      #5CC79A;
+    --ok-w:    #16302A;
+    --warn:    #E0A55A;
+    --warn-w:  #33270F;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB',
+               'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+code, .mono {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 3px; }

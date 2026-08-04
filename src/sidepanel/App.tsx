@@ -11,7 +11,8 @@ import { buildLogEntry, recordLog, shouldLog, type LogEntry } from './log';
 import { RootSetup, CollectorSetup, PathSetup } from './components/Setup';
 import { NoteView, type ArchiveOutcome } from './components/NoteView';
 import { LogView } from './components/LogView';
-import { IconRefresh } from './components/Icons';
+import { IconRefresh, IconBrowse } from './components/Icons';
+import { openBrowser } from './open-browser';
 import type { ArchiveMode } from './components/Actions';
 
 /** 重读的间隔，递增。用尽了才认定是真失败。 */
@@ -285,6 +286,11 @@ export function App() {
               <span className="v">{collector}</span>
             </button>
           </>
+        )}
+        {configured && (
+          <button className="icon-btn" title="浏览数据集" onClick={() => void openBrowser()}>
+            <IconBrowse />
+          </button>
         )}
         <button className="icon-btn" title="重新读取页面" onClick={() => void refresh()}>
           <IconRefresh />

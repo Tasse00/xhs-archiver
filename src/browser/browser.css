@@ -1,0 +1,17 @@
+@import '../styles/tokens.css';
+
+/* 浏览页在整块屏幕上跑，字号比侧边栏大一档 */
+body { font-size: 13px; background: var(--paper); }
+
+.bw { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+
+.bw-gate {
+  height: 100%; display: grid; place-items: center; text-align: center;
+  padding: 24px; gap: 12px; grid-auto-flow: row; align-content: center;
+}
+.bw-gate p { color: var(--ink-2); max-width: 380px; margin: 0; }
+.bw-gate button {
+  padding: 8px 18px; border: 1px solid var(--line-2); border-radius: 8px;
+  background: var(--surface); color: var(--ink);
+}
+.bw-gate button:hover { background: var(--sunk); }

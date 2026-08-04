@@ -109,3 +109,12 @@ export function IconVideo() {
     </svg>
   );
 }
+
+export function IconBrowse() {
+  return (
+    <svg viewBox="0 0 24 24" {...stroke} strokeWidth={1.5}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 9h18M9 9v11" />
+    </svg>
+  );
+}
