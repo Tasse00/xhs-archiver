@@ -58,6 +58,7 @@
 | 文件 | 内容 |
 |---|---|
 | [`docs/superpowers/specs/2026-08-03-xhs-archiver-design.md`](docs/superpowers/specs/2026-08-03-xhs-archiver-design.md) | **设计文档，唯一权威**。第 9 节记录了在真实页面上验证过的事实 |
+| [`docs/superpowers/specs/2026-08-04-dataset-browser-design.md`](docs/superpowers/specs/2026-08-04-dataset-browser-design.md) | 数据集浏览页（v2，独立标签页只读浏览）的设计 |
 
 ## 技术栈
 
