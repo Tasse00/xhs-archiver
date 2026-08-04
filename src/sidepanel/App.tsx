@@ -5,11 +5,14 @@ import { chromeLocalArea, loadSettings, saveSettings, defaultDatasetPath, isVali
 import { ensureRepoTemplates } from '../core/repo-template';
 import { archive } from '../core/archiver';
 import { readNoteViaTab, type PageDiag } from '../page/read-note';
+import type { ExtractedComments, ExtractedNote, Pointer } from '../types';
 import { isTransient, resolvePanelState, type PanelState } from './usePanelState';
 import { buildLogEntry, recordLog, shouldLog, type LogEntry } from './log';
-import { RootSetup, CollectorSetup } from './components/Setup';
+import { RootSetup, CollectorSetup, PathSetup } from './components/Setup';
 import { NoteView, type ArchiveOutcome } from './components/NoteView';
 import { LogView } from './components/LogView';
+import { IconRefresh } from './components/Icons';
+import type { ArchiveMode } from './components/Actions';
 
 /** 重读的间隔，递增。用尽了才认定是真失败。 */
 const RETRY_DELAYS = [300, 700, 1500];
@@ -30,11 +33,42 @@ function pushLog(
   setLog((prev) => recordLog(prev, buildLogEntry(state, tabUrl, diag, new Date(), attempts)));
 }
 
+/** 这次采集要写什么、覆盖谁。三种可采状态的差别全在这里。 */
+interface ArchivePlan {
+  note: ExtractedNote;
+  comments: ExtractedComments;
+  existing?: Pointer;
+  /** 接管时要作废的旧指针。 */
+  supersede?: Pointer[];
+}
+
+function planOf(state: PanelState): ArchivePlan | null {
+  switch (state.kind) {
+    case 'ready':
+      return { note: state.note, comments: state.comments };
+    case 'mine':
+      return { note: state.note, comments: state.comments, existing: state.pointer };
+    // 接管：拿第一条指针定原位置，但作废全部——多条指针是并发采集竞态，
+    // 只处理第一条会留下指向同一篇的孤儿指针。
+    case 'others':
+      return {
+        note: state.note,
+        comments: state.comments,
+        existing: state.pointers[0],
+        supersede: state.pointers,
+      };
+    default:
+      return null;
+  }
+}
+
 export function App() {
   const [store, setStore] = useState<Store | null>(null);
   const [rootName, setRootName] = useState<string | null>(null);
   const [collector, setCollector] = useState<string | null>(null);
-  const [datasetPath, setDatasetPath] = useState('');
+  const [datasetPath, setDatasetPath] = useState(defaultDatasetPath());
+  // 有默认值不等于使用者确认过。没确认就先把路径摆出来问一次，见 need_path。
+  const [pathConfirmed, setPathConfirmed] = useState(false);
   const [state, setState] = useState<PanelState>({ kind: 'need_root' });
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -42,6 +76,8 @@ export function App() {
   // 否则用户点完按钮看到的是一段历史记录，无法确认本次是否成功。
   const [justArchived, setJustArchived] = useState<ArchiveOutcome | null>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
+  // 顶栏点「采集者」进来的改设置界面。null 表示没在改。
+  const [editingCollector, setEditingCollector] = useState(false);
   // 判定周期序号，用来作废被新触发取代的旧周期。见 refresh。
   const genRef = useRef(0);
 
@@ -66,9 +102,23 @@ export function App() {
       if (handle && (await handle.queryPermission({ mode: 'readwrite' })) === 'granted') {
         await attachRoot(handle);
       }
-      setDatasetPath(st.datasetPath ?? (st.collector ? defaultDatasetPath(st.collector) : ''));
+      // 存过路径 = 之前确认过，不再拦一次；没存过就用今天的日期起个头。
+      if (st.datasetPath !== null) {
+        setDatasetPath(st.datasetPath);
+        setPathConfirmed(true);
+      }
     })();
   }, [attachRoot]);
+
+  // 底部改过的路径要记住，否则下次打开侧边栏又回到旧值——确认页上已经承诺
+  // 「改完会记住」。防抖是因为这是逐字输入触发的。
+  useEffect(() => {
+    if (!pathConfirmed || !collector || !isValidDatasetPath(datasetPath)) return;
+    const t = setTimeout(() => {
+      void saveSettings(chromeLocalArea, { collector, datasetPath });
+    }, 500);
+    return () => clearTimeout(t);
+  }, [pathConfirmed, collector, datasetPath]);
 
   const refresh = useCallback(async (attempt = 0, gen?: number) => {
     // 一次判定周期共用一个序号，重试沿用它。周期开始后又来了新的触发，
@@ -87,6 +137,7 @@ export function App() {
         hasRoot: store !== null,
         store: store ?? createStore({} as FileSystemDirectoryHandle),
         collector,
+        hasDatasetPath: pathConfirmed,
         tabUrl: tab?.url ?? '',
         onDiag: (d) => { diag = d; },
         readNote: async () =>
@@ -125,7 +176,7 @@ export function App() {
       setState(failed);
       pushLog(setLog, failed, '', null);
     }
-  }, [store, collector]);
+  }, [store, collector, pathConfirmed]);
 
   // refresh 要在自己内部延时重调自己，用 ref 绕开闭包里的循环依赖。
   const refreshRef = useRef<((attempt?: number, gen?: number) => Promise<void>) | null>(null);
@@ -164,33 +215,45 @@ export function App() {
   }
 
   async function saveCollector(id: string) {
-    const path = defaultDatasetPath(id);
-    await saveSettings(chromeLocalArea, { collector: id, datasetPath: path });
+    // 写入路径不再跟采集者挂钩，所以改 ID 不动路径。还没确认过路径就先别落盘——
+    // 存下来会被当成「确认过」，把 need_path 那一步跳掉。
+    await saveSettings(chromeLocalArea, {
+      collector: id,
+      datasetPath: pathConfirmed ? datasetPath : null,
+    });
     setCollector(id);
-    setDatasetPath(path);
+    setEditingCollector(false);
   }
 
-  async function doArchive(mode: 'new' | 'update' | 'migrate') {
+  async function confirmPath() {
+    if (!collector) return;
+    await saveSettings(chromeLocalArea, { collector, datasetPath });
+    setPathConfirmed(true);
+  }
+
+  async function doArchive(mode: ArchiveMode) {
     if (!store || !collector) return;
-    if (state.kind !== 'ready' && state.kind !== 'mine') return;
+    const plan = planOf(state);
+    if (!plan) return;
     if (!isValidDatasetPath(datasetPath)) {
       setMessage('写入路径不合法：每一段只能是小写字母、数字、连字符、下划线。');
       return;
     }
     setMessage(null);
-    setProgress({ done: 0, total: state.note.images.length });
+    setProgress({ done: 0, total: plan.note.images.length });
     const res = await archive({
       store,
-      note: state.note,
-      comments: state.comments,
+      note: plan.note,
+      comments: plan.comments,
       collector,
       datasetPath,
       mode,
-      existing: state.kind === 'mine' ? state.pointer : undefined,
+      existing: plan.existing,
+      supersede: plan.supersede,
       onProgress: (done, total) => setProgress({ done, total }),
     });
     setProgress(null);
-    await saveSettings(chromeLocalArea, { collector, datasetPath });
+    // 路径由上面那个 effect 负责持久化，这里不再重复存一次。
     // 必须先 refresh 再记结果：refresh 会清空「本次」标记。
     await refresh();
     setJustArchived({
@@ -198,34 +261,69 @@ export function App() {
       status: res.status,
       path: res.path,
       failures: res.failures,
-      comments: state.comments,
+      imageCount: plan.note.images.length,
+      comments: plan.comments,
       commentImageFailures: res.commentImageFailures,
     });
   }
 
+  const configured =
+    state.kind !== 'need_root' && state.kind !== 'need_collector' && state.kind !== 'need_path';
+
   return (
-    <main style={{ padding: 12, fontFamily: 'system-ui', fontSize: 14, lineHeight: 1.6 }}>
-      <header style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>
-        仓库：{rootName ?? '未选择'}
-        {rootName && <button style={{ marginLeft: 8 }} onClick={pickRoot}>切换</button>}
+    <div className="panel">
+      <header className="pt-top">
+        <div className="pt-brand"><span className="dot" />笔记归档</div>
+        {configured && (
+          <>
+            <button className="chip" title="更换数据仓库目录" onClick={() => void pickRoot()}>
+              <span className="k">仓库</span>
+              <span className="v">{rootName}</span>
+            </button>
+            <button className="chip" title="更改采集者 ID" onClick={() => setEditingCollector(true)}>
+              <span className="k">采集者</span>
+              <span className="v">{collector}</span>
+            </button>
+          </>
+        )}
+        <button className="icon-btn" title="重新读取页面" onClick={() => void refresh()}>
+          <IconRefresh />
+        </button>
       </header>
 
-      {state.kind === 'need_root' && <RootSetup onPick={pickRoot} />}
-      {state.kind === 'need_collector' && <CollectorSetup onSave={saveCollector} />}
-      {state.kind !== 'need_root' && state.kind !== 'need_collector' && (
+      {editingCollector ? (
+        <CollectorSetup
+          initial={collector}
+          onSave={(id) => void saveCollector(id)}
+          onCancel={() => setEditingCollector(false)}
+        />
+      ) : state.kind === 'need_root' ? (
+        <RootSetup onPick={() => void pickRoot()} />
+      ) : state.kind === 'need_collector' ? (
+        <CollectorSetup initial={null} onSave={(id) => void saveCollector(id)} />
+      ) : state.kind === 'need_path' ? (
+        <PathSetup
+          value={datasetPath}
+          rootName={rootName}
+          onChange={setDatasetPath}
+          onConfirm={() => void confirmPath()}
+        />
+      ) : (
         <NoteView
           state={state}
+          collector={collector ?? ''}
           datasetPath={datasetPath}
           onDatasetPathChange={setDatasetPath}
-          onArchive={doArchive}
+          onArchive={(m) => void doArchive(m)}
           progress={progress}
           message={message}
           justArchived={justArchived}
         />
       )}
-      {message && (state.kind === 'need_root' || state.kind === 'need_collector') && <p>{message}</p>}
+
+      {message && !configured && <p className="hint" style={{ padding: '0 12px' }}>{message}</p>}
 
       <LogView log={log} onRefresh={() => void refresh()} />
-    </main>
+    </div>
   );
 }

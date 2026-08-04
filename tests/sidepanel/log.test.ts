@@ -93,6 +93,7 @@ describe('shouldLog', () => {
       { kind: 'need_collector' },
       { kind: 'not_xhs' },
       { kind: 'not_note' },
+      { kind: 'need_path' },
     ];
     for (const s of skipped) expect(shouldLog(s)).toBe(false);
   });
@@ -102,7 +103,7 @@ describe('shouldLog', () => {
       { kind: 'reading' },
       { kind: 'unreadable', reason: 'no_state' },
       { kind: 'video_rejected' },
-      { kind: 'blocked_by_other', pointers: [] },
+      { kind: 'others', note: {} as never, comments: {} as never, pointers: [] },
       { kind: 'mine', note: {} as never, comments: {} as never, pointer: {} as never, duplicates: [] },
       { kind: 'ready', note: {} as never, comments: {} as never },
     ];
@@ -121,7 +122,7 @@ describe('describeOutcome', () => {
     // 中间态也要如实进日志，否则排查时看不出重试过几次
     expect(describeOutcome({ kind: 'reading' })).toBe('页面数据未就绪，稍后重读');
     expect(describeOutcome({ kind: 'video_rejected' })).toBe('视频笔记，不采集');
-    expect(describeOutcome({ kind: 'blocked_by_other', pointers: [{} as never] })).toContain('1 条');
+    expect(describeOutcome({ kind: 'others', note: {} as never, comments: {} as never, pointers: [{} as never] })).toContain('1 条');
   });
 });
 

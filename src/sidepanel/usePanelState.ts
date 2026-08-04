@@ -20,13 +20,19 @@ export function isTransient(reason: UnreadableReason): boolean {
 export type PanelState =
   | { kind: 'need_root' }
   | { kind: 'need_collector' }
+  /** 还没确认过写入路径。数据落在哪必须在采之前就说定。 */
+  | { kind: 'need_path' }
   | { kind: 'not_xhs' }
   | { kind: 'not_note' }
   /** 页面数据还没填好，正在等着重读。不是错误，不要吓用户。 */
   | { kind: 'reading' }
   | { kind: 'unreadable'; reason: UnreadableReason; detail?: string }
   | { kind: 'video_rejected' }
-  | { kind: 'blocked_by_other'; pointers: Pointer[] }
+  /**
+   * 别人采过。不是死路——可以接管，动作与 mine 相同，只是会作废对方的指针。
+   * 所以这里必须跟 mine/ready 一样带上笔记与评论。
+   */
+  | { kind: 'others'; note: ExtractedNote; comments: ExtractedComments; pointers: Pointer[] }
   | {
       kind: 'mine';
       note: ExtractedNote;
@@ -40,6 +46,8 @@ export interface ResolveInput {
   hasRoot: boolean;
   store: Store;
   collector: string | null;
+  /** 使用者是否确认过写入路径。有默认值不等于确认过。 */
+  hasDatasetPath: boolean;
   tabUrl: string;
   readNote(): Promise<PageReadResult>;
   /** 每次实际读过页面就回调一次，供侧边栏记工作日志。 */
@@ -50,6 +58,7 @@ export interface ResolveInput {
 export async function resolvePanelState(input: ResolveInput): Promise<PanelState> {
   if (!input.hasRoot) return { kind: 'need_root' };
   if (!input.collector) return { kind: 'need_collector' };
+  if (!input.hasDatasetPath) return { kind: 'need_path' };
 
   // 域名用 tab.url 判断即可（SPA 导航不会改域名）。但「是不是在看笔记」不能用
   // 它判断：modal 开关只改 SPA 地址，tab.url 会滞后，据此判定会指向错的笔记。
@@ -78,7 +87,9 @@ export async function resolvePanelState(input: ResolveInput): Promise<PanelState
   const comments = extractComments(read.rawComments, ext.note.interact.comment);
 
   const check = await checkNote(input.store, ext.note.noteId, input.collector);
-  if (check.state === 'others') return { kind: 'blocked_by_other', pointers: check.pointers };
+  if (check.state === 'others') {
+    return { kind: 'others', note: ext.note, comments, pointers: check.pointers };
+  }
   if (check.state === 'mine') {
     return {
       kind: 'mine',

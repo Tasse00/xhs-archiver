@@ -35,8 +35,12 @@ export function randomCollectorId(): string {
   return [...buf].map((b) => alphabet[b % alphabet.length]!).join('');
 }
 
-export function defaultDatasetPath(collector: string): string {
-  return `${collector}/${todayBeijing()}`;
+/**
+ * 默认写入路径不按采集者分目录。一篇笔记在仓库里只有一份，谁采的记在指针文件名
+ * 和 note.json 里；路径里带采集者名，接管之后目录名就跟实际采集者对不上了。
+ */
+export function defaultDatasetPath(): string {
+  return `collected/${todayBeijing()}`;
 }
 
 const KEYS = ['collector', 'datasetPath'];

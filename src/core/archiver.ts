@@ -18,7 +18,7 @@ import {
   type Deps,
   type FetchedImage,
 } from './downloader';
-import { lookup, writePointer } from './index-store';
+import { lookup, removePointer, writePointer } from './index-store';
 import { serializeComments, serializeNote } from './serialize';
 import { nowBeijingIso } from './time';
 
@@ -36,6 +36,12 @@ export interface ArchiveOptions {
   datasetPath: string;
   mode: 'new' | 'update' | 'migrate';
   existing?: Pointer;
+  /**
+   * 接管：成功写入后要作废的旧指针。指针一个采集者一个文件，接管别人采过的笔记
+   * 时不删掉对方那份，lookup 就会返回两条指向同一份数据的指针，下次打开这篇会
+   * 被判成「重复采集」。自己的那条会跳过——它刚被覆盖写过。
+   */
+  supersede?: Pointer[];
   deps?: Deps;
   onProgress?(done: number, total: number): void;
 }
@@ -183,7 +189,13 @@ export async function archive(opts: ArchiveOptions): Promise<ArchiveResult> {
     last_archived_at: now,
   });
 
-  // 6. 迁移：新位置确认无误后才删旧目录。
+  // 6. 接管：作废旧指针。排在写指针之后，中断最坏留下两条指针（看得出来要清理），
+  //    而不是一条都不剩（那会让这篇凭空变回「没人采过」）。
+  for (const p of opts.supersede ?? []) {
+    if (p.collector !== collector) await removePointer(store, note.noteId, p.collector);
+  }
+
+  // 7. 迁移：新位置确认无误后才删旧目录。
   //    任何中断最坏留下孤儿目录，绝不会「删了旧的但新的没写成」。
   if (mode === 'migrate' && existing && existing.path !== targetPath) {
     await store.removeDir(existing.path);

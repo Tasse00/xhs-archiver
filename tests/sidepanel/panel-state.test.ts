@@ -38,6 +38,7 @@ function baseInput(over: Partial<ResolveInput> = {}): ResolveInput {
     hasRoot: true,
     store: createStore(memRoot()),
     collector: 'zach',
+    hasDatasetPath: true,
     tabUrl: NOTE_URL,
     readNote: async () => ({
       ok: true,
@@ -76,6 +77,12 @@ describe('resolvePanelState 优先级', () => {
   it('未设采集者 ID 次之', async () => {
     const s = await resolvePanelState(baseInput({ collector: null }));
     expect(s.kind).toBe('need_collector');
+  });
+
+  // 路径决定数据落在哪，不能等到打开笔记、按钮就在眼前时才第一次露面。
+  it('还没确认过写入路径时先要求确认', async () => {
+    const s = await resolvePanelState(baseInput({ hasDatasetPath: false }));
+    expect(s.kind).toBe('need_path');
   });
 
   it('非小红书页', async () => {
@@ -153,13 +160,17 @@ describe('resolvePanelState 优先级', () => {
     expect(s.kind).toBe('video_rejected');
   });
 
-  it('他人已采集时阻止', async () => {
+  // 他人采过不再是死路：可以接管。所以这个状态必须跟 mine/ready 一样带上
+  // 笔记与评论，否则界面没法显示笔记卡，也没法直接更新。
+  it('他人已采集时带上笔记与全部指针', async () => {
     const store = createStore(memRoot());
     await writePointer(store, ptr('alice'));
     const s = await resolvePanelState(baseInput({ store }));
-    expect(s.kind).toBe('blocked_by_other');
-    if (s.kind !== 'blocked_by_other') throw new Error();
+    expect(s.kind).toBe('others');
+    if (s.kind !== 'others') throw new Error();
     expect(s.pointers[0]!.collector).toBe('alice');
+    expect(s.note.noteId).toBe(NOTE_ID);
+    expect(s.comments.list).toHaveLength(3);
   });
 
   it('自己已采集时可更新或迁移', async () => {

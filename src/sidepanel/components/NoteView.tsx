@@ -1,182 +1,293 @@
-import type { ExtractedComments, ExtractedNote } from '../../types';
-import type { PanelState } from '../usePanelState';
+import type { ReactNode } from 'react';
+import type { ExtractedComments, ExtractedNote, Pointer } from '../../types';
+import type { PanelState, UnreadableReason } from '../usePanelState';
+import { Empty } from './Empty';
+import { NoteCard } from './NoteCard';
+import { Record } from './Record';
+import { ArchiveActions, PathField, type ArchiveMode } from './Actions';
+import {
+  IconCheck, IconCross, IconDoc, IconGlobe, IconLoading, IconPlug, IconVideo,
+} from './Icons';
 
 /** 本次会话刚完成的一次采集，仅在结果仍对应当前笔记时存在。 */
 export interface ArchiveOutcome {
-  mode: 'new' | 'update' | 'migrate';
+  mode: ArchiveMode;
   status: 'complete' | 'partial';
   path: string;
   failures: string[];
+  imageCount: number;
   comments: ExtractedComments;
   commentImageFailures: string[];
 }
 
-/**
- * 只采页面已经加载好的评论，所以「采到 20 条 / 共 96 条」是常态而非故障。
- * 必须把这个差额直接摆在界面上，否则用户会以为评论采全了。
- */
-function CommentSummary({ c }: { c: ExtractedComments }) {
-  if (c.declaredTotal === 0 && c.collectedCount === 0) return <>无评论</>;
+const UNREADABLE: Record<UnreadableReason, { title: string; body: string }> = {
+  inject_failed: {
+    title: '注入页面脚本失败',
+    body: '多半是扩展权限或页面还没就绪。在 chrome://extensions 里重新加载扩展后再试。',
+  },
+  page_error: {
+    title: '脚本在页面里执行出错',
+    body: '展开下方工作日志可以看到出错时的现场。',
+  },
+  panel_error: {
+    title: '侧边栏自己出错了',
+    body: '跟页面无关。展开下方工作日志可以看到出错时的现场。',
+  },
+  no_state: {
+    title: '读不到页面数据',
+    body: '页面上没有小红书的全局数据。请确认已经登录，然后刷新页面重试。',
+  },
+  no_note: {
+    title: '找不到这篇笔记的数据',
+    body: '重新打开这篇笔记试试。',
+  },
+  incomplete_data: {
+    title: '这篇笔记还没加载完整',
+    body: '稍等一下，或者刷新页面重试。',
+  },
+};
+
+/** 只有这三种状态能采集，取出它们共有的部分。 */
+function archivable(
+  state: PanelState,
+): { note: ExtractedNote; comments: ExtractedComments; existing: Pointer | null; extra: Pointer[] } | null {
+  switch (state.kind) {
+    case 'ready':
+      return { note: state.note, comments: state.comments, existing: null, extra: [] };
+    case 'mine':
+      return { note: state.note, comments: state.comments, existing: state.pointer, extra: state.duplicates };
+    case 'others':
+      return {
+        note: state.note,
+        comments: state.comments,
+        existing: state.pointers[0] ?? null,
+        extra: state.pointers.slice(1),
+      };
+    default:
+      return null;
+  }
+}
+
+function Verdict({ state, sameDir }: { state: PanelState; sameDir: boolean }) {
+  if (state.kind === 'ready') {
+    return <div className="verdict is-ok"><b>可采集</b><span>还没有人采过这篇</span></div>;
+  }
+  if (state.kind === 'others') {
+    return (
+      <div className="verdict is-block">
+        <b>{state.pointers[0]?.collector ?? '他人'} 采过这篇</b>
+        <span>更新它等于接管</span>
+      </div>
+    );
+  }
+  if (state.kind === 'mine' && state.duplicates.length > 0) {
+    return (
+      <div className="verdict is-warn">
+        <b>这篇存了 {state.duplicates.length + 1} 份</b>
+        <span>建议迁移，合并成一份</span>
+      </div>
+    );
+  }
+  // 「我采过」是中性事实，不是警告，所以不上色
   return (
-    <>
-      评论 {c.collectedCount}/{c.declaredTotal}
-      {!c.complete && (
-        <span style={{ opacity: 0.7 }}>（只采页面已加载的，往下翻可加载更多）</span>
-      )}
-    </>
+    <div className="verdict">
+      <b>你采过这篇</b>
+      <span>{sameDir ? '已在当前路径下' : '存放位置与当前路径不同'}</span>
+    </div>
   );
 }
 
-/**
- * 很多笔记的 title 本来就是空的，正文首行才是页面上看到的那句话。
- * 一律显示「(无标题)」会让人以为读错了笔记。
- */
-function displayTitle(note: ExtractedNote): { text: string; fromContent: boolean } {
-  if (note.title) return { text: note.title, fromContent: false };
-  const firstLine = note.content.split('\n').find((l) => l.trim() !== '')?.trim() ?? '';
-  if (!firstLine) return { text: '(无标题、无正文)', fromContent: false };
-  return {
-    text: firstLine.length > 30 ? `${firstLine.slice(0, 30)}…` : firstLine,
-    fromContent: true,
-  };
-}
-
-function NoteTitle({ note }: { note: ExtractedNote }) {
-  const { text, fromContent } = displayTitle(note);
+function Result({ outcome }: { outcome: ArchiveOutcome }) {
+  const verb = outcome.mode === 'new' ? '采集' : outcome.mode === 'update' ? '更新' : '迁移';
+  if (outcome.status === 'partial') {
+    return (
+      <div className="result bad">
+        <div className="result-h"><IconCross />没{verb}完，索引没写</div>
+        <dl>
+          <dt>原因</dt><dd>{outcome.failures.join('；')}</dd>
+          <dt>已写入</dt><dd className="mono">{outcome.path}/（标记为 partial）</dd>
+        </dl>
+        <div className="note">索引指针没有写入 —— 这篇仍然算「没采过」，可以直接重试。</div>
+      </div>
+    );
+  }
+  const c = outcome.comments;
   return (
-    <h3 style={{ marginBottom: 4 }}>
-      {text}
-      {fromContent && (
-        <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.6 }}>（无标题，取自正文）</span>
-      )}
-    </h3>
+    <div className="result ok">
+      <div className="result-h"><IconCheck />{verb}完成</div>
+      <dl>
+        <dt>位置</dt><dd className="mono">{outcome.path}/</dd>
+        <dt>配图</dt><dd>{outcome.imageCount} 张，全部写入</dd>
+        <dt>评论</dt>
+        <dd>
+          {c.collectedCount} / {c.declaredTotal} 条{!c.complete && '（只采已加载的）'}
+        </dd>
+      </dl>
+    </div>
   );
 }
 
 export function NoteView({
-  state, datasetPath, onDatasetPathChange, onArchive, progress, message, justArchived,
+  state, collector, datasetPath, onDatasetPathChange, onArchive, progress, message, justArchived,
 }: {
   state: PanelState;
+  collector: string;
   datasetPath: string;
   onDatasetPathChange(v: string): void;
-  onArchive(mode: 'new' | 'update' | 'migrate'): void;
+  onArchive(mode: ArchiveMode): void;
   progress: { done: number; total: number } | null;
   message: string | null;
   justArchived: ArchiveOutcome | null;
 }) {
-  if (state.kind === 'reading') return <p style={{ opacity: 0.7 }}>正在读取页面数据…</p>;
-  if (state.kind === 'not_xhs') return <p>当前标签页不是小红书。</p>;
-  if (state.kind === 'not_note') return <p>请打开一篇笔记后再采集。</p>;
+  /**
+   * 没有笔记可采时的画面。路径输入框照样留在底部——它是「数据往哪写」的唯一
+   * 出口，只在能按采集按钮时才出现的话，配置完却没打开笔记的人根本看不到它。
+   */
+  function idle(body: ReactNode) {
+    return (
+      <>
+        {body}
+        <div className="pt-act">
+          <PathField value={datasetPath} onChange={onDatasetPathChange} />
+        </div>
+      </>
+    );
+  }
+
+  if (state.kind === 'reading') {
+    return idle(
+      <div className="pt-body">
+        <Empty icon={<IconLoading />} title="正在读取页面数据">
+          小红书的笔记详情是异步加载的，通常一秒内就好。
+        </Empty>
+      </div>,
+    );
+  }
+
+  if (state.kind === 'not_xhs') {
+    return idle(
+      <div className="pt-body">
+        <Empty icon={<IconGlobe />} title="当前标签页不是小红书">
+          打开 xiaohongshu.com 上的任意一篇图文笔记，这里就会显示它的信息。
+        </Empty>
+      </div>,
+    );
+  }
+
+  if (state.kind === 'not_note') {
+    return idle(
+      <div className="pt-body">
+        <Empty icon={<IconDoc />} title="还没打开笔记">
+          点开一篇笔记 —— 独立页面或者首页上的弹窗都行。
+        </Empty>
+      </div>,
+    );
+  }
+
+  if (state.kind === 'video_rejected') {
+    return idle(
+      <div className="pt-body">
+        <Empty icon={<IconVideo />} title="视频笔记不采集">
+          这个工具只归档图文笔记，视频明确不在范围内。换一篇图文笔记试试。
+        </Empty>
+      </div>,
+    );
+  }
+
   if (state.kind === 'unreadable') {
-    const hints: Record<typeof state.reason, string> = {
-      inject_failed: '注入页面脚本失败，多为扩展权限或页面尚未就绪，重新加载扩展后再试。',
-      page_error: '脚本在页面里执行时出错，详情见下方工作日志。',
-      panel_error: '侧边栏自己出错了，与页面无关，详情见下方工作日志。',
-      no_state: '页面上没有小红书的全局数据，请确认已登录并刷新页面。',
-      no_note: '页面上找不到当前这篇笔记的数据，请重新打开这篇笔记。',
-      incomplete_data: '这篇笔记的数据还没加载完整，稍等一下或刷新页面重试。',
-    };
-    return (
-      <section>
-        <p>读不到页面数据（{state.reason}）。{hints[state.reason]}</p>
-        {state.detail && <p style={{ fontSize: 12, opacity: 0.7 }}><code>{state.detail}</code></p>}
-      </section>
-    );
-  }
-  if (state.kind === 'video_rejected') return <p>这是一篇视频笔记，本工具不采集视频。</p>;
-
-  if (state.kind === 'blocked_by_other') {
-    return (
-      <section>
-        <p>这篇已被他人采集，不重复采集。</p>
-        <ul>
-          {state.pointers.map((p) => (
-            <li key={p.collector}>
-              <b>{p.collector}</b> 于 {p.last_archived_at} 采集<br />
-              <code>{p.path}</code>
-            </li>
-          ))}
-        </ul>
-        <p style={{ fontSize: 12, opacity: 0.7 }}>
-          若对方数据有问题需要接管，删除对应的 <code>_index</code> 指针文件即可解除。
-        </p>
-      </section>
+    const hint = UNREADABLE[state.reason];
+    return idle(
+      <div className="pt-body">
+        <Empty
+          icon={<IconPlug />}
+          title={hint.title}
+          code={state.reason}
+          detail={state.detail}
+          alert
+        >
+          {hint.body}
+        </Empty>
+      </div>,
     );
   }
 
-  const shown = state.kind === 'mine' || state.kind === 'ready' ? state : null;
-  if (!shown) return null;
-  const note = shown.note;
+  const a = archivable(state);
+  if (!a) return idle(<div className="pt-body" />);
 
+  // 刚点完按钮，最想知道的是成没成，所以结果卡排在笔记卡前面
   if (justArchived) {
-    const verb = justArchived.mode === 'new' ? '采集' : justArchived.mode === 'update' ? '更新' : '迁移';
-    return (
-      <section>
-        <NoteTitle note={note} />
-        {justArchived.status === 'complete' ? (
-          <div style={{ padding: 8, background: 'rgba(0,160,60,0.12)', borderRadius: 4 }}>
-            <p style={{ margin: 0, fontWeight: 600 }}>✓ 本次{verb}完成</p>
-            <p style={{ margin: '4px 0 0' }}><code>{justArchived.path}</code></p>
-            <p style={{ margin: '4px 0 0', fontSize: 12 }}>
-              {note.images.length} 张图已写入，
-              <CommentSummary c={justArchived.comments} />。记得在数据仓库里提交这次改动。
-            </p>
-            {justArchived.commentImageFailures.length > 0 && (
-              // 评论配图取不到不影响归档成败，但要说一声，别让人以为图都在
-              <p style={{ margin: '4px 0 0', fontSize: 12, color: 'darkorange' }}>
-                {justArchived.commentImageFailures.length} 张评论配图未取到，其余数据完整。
-              </p>
-            )}
-          </div>
-        ) : (
-          <div style={{ padding: 8, background: 'rgba(200,60,0,0.12)', borderRadius: 4 }}>
-            <p style={{ margin: 0, fontWeight: 600 }}>✗ 本次{verb}未完成，索引未写入</p>
-            <p style={{ margin: '4px 0 0', fontSize: 12 }}>{justArchived.failures.join('；')}</p>
+    return idle(
+      <div className="pt-body">
+        <Result outcome={justArchived} />
+        {justArchived.status === 'complete' && justArchived.commentImageFailures.length > 0 && (
+          // 评论配图取不到不影响归档状态，但要说一声，别让人以为图都在
+          <div className="verdict is-warn">
+            <b>{justArchived.commentImageFailures.length} 张评论配图没取到</b>
+            <span>笔记本身完整</span>
           </div>
         )}
-        <p style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>
-          切换到别的笔记后，这条提示会消失。
-        </p>
-      </section>
+        <p className="hint">切换到别的笔记后这条提示会消失。</p>
+        <NoteCard note={a.note} comments={a.comments} />
+      </div>,
     );
   }
 
+  const sameDir = a.existing !== null
+    && datasetPath.replace(/\/+$/, '') === a.existing.path.slice(0, a.existing.path.lastIndexOf('/'));
+
   return (
-    <section>
-      <NoteTitle note={note} />
-      <p style={{ fontSize: 12 }}>
-        {note.images.length} 张图 · 赞 {note.interact.liked} · 藏 {note.interact.collected}
-        <br />
-        <CommentSummary c={shown.comments} />
-      </p>
+    <>
+      <div className="pt-body">
+        {/* 数据是从当前页面读的，中途切走就采不完。这句得摆在最显眼的位置。 */}
+        {progress ? (
+          <div className="verdict is-warn">
+            <b>采集中，别关这篇笔记</b>
+            <span>中途关掉或切走会让这次采集只写一半</span>
+          </div>
+        ) : (
+          <Verdict state={state} sameDir={sameDir} />
+        )}
+        <NoteCard note={a.note} comments={a.comments} />
 
-      <label>
-        写入路径
-        <input value={datasetPath} onChange={(e) => onDatasetPathChange(e.target.value)} />
-      </label>
+        {a.existing && (
+          <div>
+            <div className="sect-h">
+              采集记录
+              {a.extra.length > 0 && <><b>{a.extra.length + 1}</b> 处</>}
+            </div>
+            <Record pointer={a.existing} collector={collector} here={sameDir} />
+            {a.extra.map((p) => <Record key={p.collector} pointer={p} collector={collector} />)}
+          </div>
+        )}
 
-      {state.kind === 'mine' && (
-        <>
-          <p>
-            你已于 {state.pointer.last_archived_at} 采集过，位于 <code>{state.pointer.path}</code>
-          </p>
-          {state.duplicates.length > 0 && (
-            <p style={{ color: 'darkorange' }}>
-              这篇存在 {state.duplicates.length + 1} 份重复采集：
-              {state.duplicates.map((d) => d.path).join('、')}
-            </p>
-          )}
-          <button onClick={() => onArchive('update')}>更新原位置</button>
-          <button onClick={() => onArchive('migrate')}>
-            迁移到当前路径（将删除 {state.pointer.path}）
-          </button>
-        </>
-      )}
+        {state.kind === 'others' && (
+          <p className="hint">不会另存一份 —— 一篇笔记在仓库里始终只有一份，更新之后指针归你。</p>
+        )}
+      </div>
 
-      {state.kind === 'ready' && <button onClick={() => onArchive('new')}>采集这篇</button>}
-
-      {progress && <p>下载中 {progress.done}/{progress.total}</p>}
-      {message && <p>{message}</p>}
-    </section>
+      <div className="pt-act">
+        {progress ? (
+          <>
+            <div className="sect-h">正在下载图片 <b>{progress.done} / {progress.total}</b></div>
+            <div className="bar">
+              <i style={{ width: `${progress.total === 0 ? 0 : (progress.done / progress.total) * 100}%` }} />
+            </div>
+            <button className="btn" disabled>采集中…</button>
+          </>
+        ) : (
+          <>
+            <PathField value={datasetPath} onChange={onDatasetPathChange} />
+            <ArchiveActions
+              existing={a.existing}
+              datasetPath={datasetPath}
+              collector={collector}
+              busy={false}
+              onArchive={onArchive}
+            />
+          </>
+        )}
+        {message && <div className="field-err">{message}</div>}
+      </div>
+    </>
   );
 }

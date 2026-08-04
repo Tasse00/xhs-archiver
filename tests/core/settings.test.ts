@@ -57,9 +57,11 @@ describe('randomCollectorId', () => {
 });
 
 describe('defaultDatasetPath', () => {
-  it('形如 {collector}/{YYYY-MM-DD}', () => {
-    const p = defaultDatasetPath('zach');
-    expect(p).toMatch(/^zach\/\d{4}-\d{2}-\d{2}$/);
+  // 不按采集者分目录：一篇笔记在仓库里只有一份，谁采的记在指针和 note.json 里。
+  // 路径里带采集者名，接管之后目录名就会跟实际采集者对不上。
+  it('形如 collected/{YYYY-MM-DD}', () => {
+    const p = defaultDatasetPath();
+    expect(p).toMatch(/^collected\/\d{4}-\d{2}-\d{2}$/);
     expect(isValidDatasetPath(p)).toBe(true);
   });
 });

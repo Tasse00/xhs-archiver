@@ -37,6 +37,7 @@ export function shouldLog(state: PanelState): boolean {
   switch (state.kind) {
     case 'need_root':
     case 'need_collector':
+    case 'need_path':
     case 'not_xhs':
     case 'not_note':
       return false;
@@ -49,12 +50,13 @@ export function describeOutcome(state: PanelState): string {
   switch (state.kind) {
     case 'need_root': return '未选择仓库目录';
     case 'need_collector': return '未设置采集者 ID';
+    case 'need_path': return '未确认写入路径';
     case 'not_xhs': return '当前标签页不是小红书';
     case 'not_note': return '未打开笔记';
     case 'reading': return '页面数据未就绪，稍后重读';
     case 'unreadable': return `读取失败：${state.reason}`;
     case 'video_rejected': return '视频笔记，不采集';
-    case 'blocked_by_other': return `他人已采集（${state.pointers.length} 条指针）`;
+    case 'others': return `他人已采集，可接管（${state.pointers.length} 条指针）`;
     case 'mine': return '自己已采集';
     case 'ready': return '可采集';
   }

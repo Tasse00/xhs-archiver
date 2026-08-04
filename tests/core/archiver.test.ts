@@ -270,3 +270,100 @@ describe('archive - 迁移', () => {
     expect((await lookup(store, NOTE_ID))[0]!.path).toBe(`zach/2026-08-01/${NOTE_ID}`);
   });
 });
+
+/**
+ * 接管别人采过的笔记。指针是「一个采集者一个文件」，所以接管必须把对方那份删掉，
+ * 否则 lookup 会返回两条指向同一份数据的指针，下次打开这篇就被判成「重复采集」。
+ */
+describe('archive - 接管他人的采集', () => {
+  /** 先让 lily 采一份，返回她的指针。 */
+  async function lilyArchived(path = 'collected/2026-08-01'): Promise<Pointer> {
+    await archive({ store, note: goodNote(), collector: 'lily', datasetPath: path, mode: 'new', deps: okDeps() });
+    return (await lookup(store, NOTE_ID))[0]!;
+  }
+
+  it('原位更新：数据留在原路径，指针换成自己', async () => {
+    const existing = await lilyArchived();
+
+    await archive({
+      store, note: goodNote(), collector: 'zach',
+      datasetPath: 'collected/2026-08-04', mode: 'update',
+      existing, supersede: [existing], deps: okDeps(),
+    });
+
+    const ptrs = await lookup(store, NOTE_ID);
+    expect(ptrs).toHaveLength(1);
+    expect(ptrs[0]!.collector).toBe('zach');
+    expect(ptrs[0]!.path).toBe(`collected/2026-08-01/${NOTE_ID}`);
+
+    const rec = JSON.parse((await store.readText(`collected/2026-08-01/${NOTE_ID}/note.json`))!);
+    expect(rec.archive.collector).toBe('zach');
+    // 首采时间沿用对方的：这篇进仓库的时间并没有变
+    expect(rec.archive.first_archived_at).toBe(existing.first_archived_at);
+  });
+
+  it('迁移接管：搬到自己的路径，旧目录与旧指针都清掉', async () => {
+    const existing = await lilyArchived();
+
+    await archive({
+      store, note: goodNote(), collector: 'zach',
+      datasetPath: 'collected/2026-08-04', mode: 'migrate',
+      existing, supersede: [existing], deps: okDeps(),
+    });
+
+    expect(await store.exists(`collected/2026-08-04/${NOTE_ID}/note.json`)).toBe(true);
+    expect(await store.exists(`collected/2026-08-01/${NOTE_ID}/note.json`)).toBe(false);
+
+    const ptrs = await lookup(store, NOTE_ID);
+    expect(ptrs).toHaveLength(1);
+    expect(ptrs[0]!.collector).toBe('zach');
+  });
+
+  // 删指针排在写指针之后。中途出错最坏留下两条指针（能看出来），而不是一条都不剩。
+  it('接管失败时对方的指针原样保留', async () => {
+    const existing = await lilyArchived();
+
+    const res = await archive({
+      store, note: goodNote(), collector: 'zach',
+      datasetPath: 'collected/2026-08-04', mode: 'update',
+      existing, supersede: [existing], deps: failingDeps(),
+    });
+
+    expect(res.status).toBe('partial');
+    const ptrs = await lookup(store, NOTE_ID);
+    expect(ptrs).toHaveLength(1);
+    expect(ptrs[0]!.collector).toBe('lily');
+  });
+
+  // lookup 返回多条的情况是并发采集竞态。接管要把它们一并收拢，不能只处理第一条。
+  it('多人各采过一份时全部指针都被取代', async () => {
+    const existing = await lilyArchived();
+    await writePointer(store, ptr('bob', `collected/2026-07-20/${NOTE_ID}`));
+    const all = await lookup(store, NOTE_ID);
+    expect(all).toHaveLength(2);
+
+    await archive({
+      store, note: goodNote(), collector: 'zach',
+      datasetPath: 'collected/2026-08-04', mode: 'update',
+      existing, supersede: all, deps: okDeps(),
+    });
+
+    const ptrs = await lookup(store, NOTE_ID);
+    expect(ptrs).toHaveLength(1);
+    expect(ptrs[0]!.collector).toBe('zach');
+  });
+
+  // supersede 里混进自己的指针时不能把刚写好的那条删掉。
+  it('不会删掉自己刚写的指针', async () => {
+    await archive({ store, note: goodNote(), collector: 'zach', datasetPath: 'collected/2026-08-01', mode: 'new', deps: okDeps() });
+    const existing = (await lookup(store, NOTE_ID))[0]!;
+
+    await archive({
+      store, note: goodNote(), collector: 'zach',
+      datasetPath: 'collected/2026-08-01', mode: 'update',
+      existing, supersede: [existing], deps: okDeps(),
+    });
+
+    expect(await lookup(store, NOTE_ID)).toHaveLength(1);
+  });
+});
