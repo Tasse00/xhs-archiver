@@ -36,6 +36,7 @@ const MAX_ENTRIES = 30;
 export function shouldLog(state: PanelState): boolean {
   switch (state.kind) {
     case 'need_root':
+    case 'need_permission':
     case 'need_collector':
     case 'need_path':
     case 'not_xhs':
@@ -49,6 +50,7 @@ export function shouldLog(state: PanelState): boolean {
 export function describeOutcome(state: PanelState): string {
   switch (state.kind) {
     case 'need_root': return '未选择仓库目录';
+    case 'need_permission': return '仓库目录授权已失效';
     case 'need_collector': return '未设置采集者 ID';
     case 'need_path': return '未确认写入路径';
     case 'not_xhs': return '当前标签页不是小红书';

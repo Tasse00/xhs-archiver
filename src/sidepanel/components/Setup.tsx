@@ -17,6 +17,30 @@ export function RootSetup({ onPick }: { onPick(): void }) {
   );
 }
 
+/**
+ * 权限被回收后的恢复入口。这里刻意不是「重新选择目录」——目录句柄一直都在，
+ * 让人再走一遍选择器等于把浏览器的限制转嫁给使用者。
+ */
+export function PermissionSetup({
+  rootName, onRestore,
+}: {
+  rootName: string | null;
+  onRestore(): void;
+}) {
+  return (
+    <div className="pt-body">
+      <Empty
+        icon={<IconFolder />}
+        title="需要重新授权数据仓库"
+        action={<button className="btn btn-auto btn-primary" onClick={onRestore}>恢复授权</button>}
+      >
+        浏览器收回了对 <b>{rootName ?? '数据仓库'}</b> 的访问权限——关掉本扩展的其他标签页
+        （比如浏览页）就会触发。目录还记着，点一下即可继续，不用重新选。
+      </Empty>
+    </div>
+  );
+}
+
 export function CollectorSetup({
   initial, onSave, onCancel,
 }: {

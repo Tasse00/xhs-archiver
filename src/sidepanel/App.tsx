@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createStore, type Store } from '../core/store';
-import { loadRootHandle, saveRootHandle, ensurePermission } from '../core/handle-store';
+import {
+  loadRootHandle, saveRootHandle, ensurePermission, hasPermission, isPermissionError,
+} from '../core/handle-store';
 import { chromeLocalArea, loadSettings, saveSettings, defaultDatasetPath, isValidDatasetPath } from '../core/settings';
 import { ensureRepoTemplates } from '../core/repo-template';
 import { archive } from '../core/archiver';
@@ -8,7 +10,7 @@ import { readNoteViaTab, type PageDiag } from '../page/read-note';
 import type { ExtractedComments, ExtractedNote, Pointer } from '../types';
 import { isTransient, resolvePanelState, type PanelState } from './usePanelState';
 import { buildLogEntry, recordLog, shouldLog, type LogEntry } from './log';
-import { RootSetup, CollectorSetup, PathSetup } from './components/Setup';
+import { RootSetup, PermissionSetup, CollectorSetup, PathSetup } from './components/Setup';
 import { NoteView, type ArchiveOutcome } from './components/NoteView';
 import { LogView } from './components/LogView';
 import { IconRefresh, IconBrowse } from './components/Icons';
@@ -65,6 +67,9 @@ function planOf(state: PanelState): ArchivePlan | null {
 
 export function App() {
   const [store, setStore] = useState<Store | null>(null);
+  // 句柄要留着，不能只留 store：权限被回收后靠它一次点击就能恢复，
+  // 丢了就只剩「重新选目录」这一条路。
+  const [root, setRoot] = useState<FileSystemDirectoryHandle | null>(null);
   const [rootName, setRootName] = useState<string | null>(null);
   const [collector, setCollector] = useState<string | null>(null);
   const [datasetPath, setDatasetPath] = useState(defaultDatasetPath());
@@ -90,6 +95,7 @@ export function App() {
     const s = createStore(handle);
     const created = await ensureRepoTemplates(s);
     setStore(s);
+    setRoot(handle);
     setRootName(handle.name);
     if (created.length > 0) setMessage(`已初始化仓库模板：${created.join('、')}`);
   }, []);
@@ -100,8 +106,12 @@ export function App() {
       const st = await loadSettings(chromeLocalArea);
       setCollector(st.collector);
       const handle = await loadRootHandle();
-      if (handle && (await handle.queryPermission({ mode: 'readwrite' })) === 'granted') {
-        await attachRoot(handle);
+      // 权限不够时也要把句柄收下：这里不能 requestPermission（没有用户手势），
+      // 但丢掉它就会退回 need_root，让人以为目录从没选过、得重选一遍。
+      if (handle) {
+        setRoot(handle);
+        setRootName(handle.name);
+        if (await hasPermission(handle)) await attachRoot(handle);
       }
       // 存过路径 = 之前确认过，不再拦一次；没存过就用今天的日期起个头。
       if (st.datasetPath !== null) {
@@ -133,9 +143,15 @@ export function App() {
       setJustArchived(null);
       setMessage(null);
 
+      // 每个周期都查一遍：权限会在两次判定之间被回收（关掉浏览页就会），
+      // 只在挂载时查过是不够的。query 不需要用户手势，很便宜。
+      const granted = store !== null && root !== null && (await hasPermission(root));
+      if (myGen !== genRef.current) return;
+
       let diag: PageDiag | null = null;
       const next = await resolvePanelState({
-        hasRoot: store !== null,
+        hasRoot: root !== null,
+        hasPermission: granted,
         store: store ?? createStore({} as FileSystemDirectoryHandle),
         collector,
         hasDatasetPath: pathConfirmed,
@@ -170,6 +186,12 @@ export function App() {
       setState(next);
       pushLog(setLog, next, tab?.url ?? '', diag, attempt);
     } catch (e) {
+      // 权限在这一轮判定的中途被回收（上面查过之后才掉）。这不是故障，
+      // 报成 panel_error 会让人对着一句 NotAllowedError 无从下手。
+      if (isPermissionError(e)) {
+        setState({ kind: 'need_permission' });
+        return;
+      }
       // 这里兜住的是侧边栏自身的异常，不是注入失败。标成 inject_failed 会把
       // 排查方向指到扩展权限上去，而真正的原因可能在别处。
       const detail = e instanceof Error ? e.message : String(e);
@@ -177,7 +199,7 @@ export function App() {
       setState(failed);
       pushLog(setLog, failed, '', null);
     }
-  }, [store, collector, pathConfirmed]);
+  }, [store, root, collector, pathConfirmed]);
 
   // refresh 要在自己内部延时重调自己，用 ref 绕开闭包里的循环依赖。
   const refreshRef = useRef<((attempt?: number, gen?: number) => Promise<void>) | null>(null);
@@ -215,6 +237,18 @@ export function App() {
     await attachRoot(handle);
   }
 
+  /** 必须由点击调用：requestPermission 只在用户手势里才会弹框。 */
+  async function restorePermission() {
+    if (!root) return;
+    if (!(await ensurePermission(root))) {
+      setMessage('授权未通过。也可以点顶栏的「仓库」重新选择目录。');
+      return;
+    }
+    // 不在这里 refresh：attachRoot 里的 setStore 会重建 refresh，
+    // 上面那个 effect 自然会跑一遍。手动调用只会用到闭包里的旧 store。
+    await attachRoot(root);
+  }
+
   async function saveCollector(id: string) {
     // 写入路径不再跟采集者挂钩，所以改 ID 不动路径。还没确认过路径就先别落盘——
     // 存下来会被当成「确认过」，把 need_path 那一步跳掉。
@@ -233,9 +267,16 @@ export function App() {
   }
 
   async function doArchive(mode: ArchiveMode) {
-    if (!store || !collector) return;
+    if (!store || !collector || !root) return;
     const plan = planOf(state);
     if (!plan) return;
+    // 点按钮本身就是用户手势，所以这里能直接把权限要回来——权限刚被回收的
+    // 常见情况下，使用者点一次「允许」就继续采，不必被打回授权页。
+    // 必须赶在其他 await 之前，手势的有效期只有几秒。
+    if (!(await ensurePermission(root))) {
+      setMessage('目录授权已失效，采集没有开始。请重新授权后再试。');
+      return;
+    }
     if (!isValidDatasetPath(datasetPath)) {
       setMessage('写入路径不合法：每一段只能是小写字母、数字、连字符、下划线。');
       return;
@@ -269,7 +310,8 @@ export function App() {
   }
 
   const configured =
-    state.kind !== 'need_root' && state.kind !== 'need_collector' && state.kind !== 'need_path';
+    state.kind !== 'need_root' && state.kind !== 'need_permission' &&
+    state.kind !== 'need_collector' && state.kind !== 'need_path';
 
   return (
     <div className="panel">
@@ -305,6 +347,8 @@ export function App() {
         />
       ) : state.kind === 'need_root' ? (
         <RootSetup onPick={() => void pickRoot()} />
+      ) : state.kind === 'need_permission' ? (
+        <PermissionSetup rootName={rootName} onRestore={() => void restorePermission()} />
       ) : state.kind === 'need_collector' ? (
         <CollectorSetup initial={null} onSave={(id) => void saveCollector(id)} />
       ) : state.kind === 'need_path' ? (

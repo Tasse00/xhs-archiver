@@ -39,9 +39,29 @@ export async function clearRootHandle(): Promise<void> {
   await tx('readwrite', (s) => s.delete(KEY));
 }
 
-/** 权限可能在浏览器重启后失效；恢复需要用户手势，故只能由 UI 点击触发。 */
+const RW = { mode: 'readwrite' as const };
+
+/**
+ * 权限随时可能被回收，不只是浏览器重启。实测：扩展 origin 的最后一个标签页
+ * 关闭时（例如从侧边栏开了浏览页又关掉），Chrome 就把该 origin 上所有句柄的
+ * 权限降回 prompt——侧边栏还开着也一样，它不算标签页。
+ *
+ * 所以任何一次落盘之前都要查一遍，不能只在挂载时查。
+ */
+export async function hasPermission(h: FileSystemDirectoryHandle): Promise<boolean> {
+  return (await h.queryPermission(RW)) === 'granted';
+}
+
+/** 恢复需要用户手势，故只能由 UI 点击触发。 */
 export async function ensurePermission(h: FileSystemDirectoryHandle): Promise<boolean> {
-  const opts = { mode: 'readwrite' as const };
-  if ((await h.queryPermission(opts)) === 'granted') return true;
-  return (await h.requestPermission(opts)) === 'granted';
+  if (await hasPermission(h)) return true;
+  return (await h.requestPermission(RW)) === 'granted';
+}
+
+/**
+ * 权限没了的时候 FSA 抛的是 NotAllowedError。它跟「目录不存在」完全是两回事，
+ * 混进通用错误处理会把人指向「重新加载扩展」这个错误方向。
+ */
+export function isPermissionError(e: unknown): boolean {
+  return e instanceof DOMException && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
 }

@@ -90,6 +90,7 @@ describe('shouldLog', () => {
   it('不在笔记页的状态一律不记', () => {
     const skipped: PanelState[] = [
       { kind: 'need_root' },
+      { kind: 'need_permission' },
       { kind: 'need_collector' },
       { kind: 'not_xhs' },
       { kind: 'not_note' },

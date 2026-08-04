@@ -19,6 +19,8 @@ export function isTransient(reason: UnreadableReason): boolean {
 
 export type PanelState =
   | { kind: 'need_root' }
+  /** 目录还记着，但权限被浏览器回收了。只差一次用户手势，不必重选目录。 */
+  | { kind: 'need_permission' }
   | { kind: 'need_collector' }
   /** 还没确认过写入路径。数据落在哪必须在采之前就说定。 */
   | { kind: 'need_path' }
@@ -44,6 +46,8 @@ export type PanelState =
 
 export interface ResolveInput {
   hasRoot: boolean;
+  /** 句柄当前是否还有 readwrite 权限。它会在采集途中被回收，见 handle-store。 */
+  hasPermission: boolean;
   store: Store;
   collector: string | null;
   /** 使用者是否确认过写入路径。有默认值不等于确认过。 */
@@ -57,6 +61,8 @@ export interface ResolveInput {
 /** 顺序即优先级，与设计文档第 8 节的状态机一致。 */
 export async function resolvePanelState(input: ResolveInput): Promise<PanelState> {
   if (!input.hasRoot) return { kind: 'need_root' };
+  // 没权限时下面每一步读盘都会抛 NotAllowedError，先拦住比让它炸在深处强。
+  if (!input.hasPermission) return { kind: 'need_permission' };
   if (!input.collector) return { kind: 'need_collector' };
   if (!input.hasDatasetPath) return { kind: 'need_path' };
 

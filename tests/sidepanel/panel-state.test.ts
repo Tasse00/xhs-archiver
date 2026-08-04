@@ -36,6 +36,7 @@ const NO_NOTE_DIAG = diagOf({
 function baseInput(over: Partial<ResolveInput> = {}): ResolveInput {
   return {
     hasRoot: true,
+    hasPermission: true,
     store: createStore(memRoot()),
     collector: 'zach',
     hasDatasetPath: true,
@@ -72,6 +73,9 @@ describe('resolvePanelState 优先级', () => {
   it('未授权目录优先于一切', async () => {
     const s = await resolvePanelState(baseInput({ hasRoot: false, collector: null }));
     expect(s.kind).toBe('need_root');
+    // 目录还记着、只是权限被浏览器回收：不能退回 need_root，那等于让人重选目录
+    const p = await resolvePanelState(baseInput({ hasPermission: false, collector: null }));
+    expect(p.kind).toBe('need_permission');
   });
 
   it('未设采集者 ID 次之', async () => {
