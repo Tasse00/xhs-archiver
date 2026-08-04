@@ -23,7 +23,10 @@ export function LogView({ log, onRefresh }: { log: LogEntry[]; onRefresh(): void
         </button>
       </div>
 
-      {log.length === 0 && <p style={{ ...mono, opacity: 0.6 }}>还没有记录。</p>}
+      {/* 只在笔记页上记录，见 shouldLog */}
+      {log.length === 0 && (
+        <p style={{ ...mono, opacity: 0.6 }}>还没有记录。只记录笔记页上的判定。</p>
+      )}
 
       <ol style={{ ...mono, listStyle: 'none', padding: 0, margin: 0 }}>
         {log.map((e, i) => (
@@ -34,7 +37,14 @@ export function LogView({ log, onRefresh }: { log: LogEntry[]; onRefresh(): void
               borderTop: i === 0 ? 'none' : '1px dotted rgba(128,128,128,0.3)',
             }}
           >
-            <div><b>{e.at}</b> {e.outcome}</div>
+            <div>
+              <b>{e.at}</b> {e.outcome}
+              {/* 重复触发与重读次数压在这里，避免它们各自占一条 */}
+              {e.repeats > 1 && <span style={{ opacity: 0.6 }}> ×{e.repeats}</span>}
+              {e.attempts > 0 && (
+                <span style={{ opacity: 0.6 }}> （重读 {e.attempts} 次后定下）</span>
+              )}
+            </div>
             <div style={{ opacity: 0.75 }}>tab: {e.tabUrl || '—'}</div>
             <div style={{ opacity: 0.75 }}>
               页面: {e.pathname}

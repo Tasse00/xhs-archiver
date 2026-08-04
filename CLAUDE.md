@@ -4,9 +4,12 @@
 
 小红书笔记归档 Chrome 扩展。**计划里的 13 个任务已全部实现，正在真实页面上做验收。** 已在实测中修掉的问题：笔记定位（见下）、正文夹带话题标签、缺最后编辑时间、采集结果与历史记录混淆、注入失败被误报成读不到全局变量。
 
-验收期间新增（已实现并有测试覆盖，**尚未在真实页面端到端验证**）：**随笔记采集评论**，落到同目录的 `comments.json`，配图落 `images/comments/`。只采页面已加载的那部分，见设计文档第 13 节。
+验收期间新增的两项（已实现并有测试覆盖，**尚未在真实页面端到端验证**）：
 
-**下一步动作：** 继续按 `docs/superpowers/plans/2026-08-03-xhs-archiver-v1.md` 的 Task 13 走验收清单（24 项），修实测中暴露的问题；并补验评论采集。
+- **随笔记采集评论**，落到同目录的 `comments.json`，配图落 `images/comments/`。只采页面已加载的那部分，见设计文档第 13 节
+- **工作日志只记录笔记页上的判定**（`shouldLog`），切标签页、逛非笔记页不再产生条目；相同结论就地合并（`recordLog`），中间态不单独成条
+
+**下一步动作：** 继续按 `docs/superpowers/plans/2026-08-03-xhs-archiver-v1.md` 的 Task 13 走验收清单（24 项），修实测中暴露的问题；并补验上面两项。
 
 ## 阅读顺序
 
@@ -23,6 +26,7 @@
 - **取数据用 `JSON.parse(JSON.stringify(note))`，不要用 `structuredClone`**。后者的产物不一定能跨扩展边界，实测出现过传回时丢失、调用方只拿到 `undefined`。落盘本来就是 JSON。
 - **`noteDetailMap[id]` 是异步填充的**，点开 modal 瞬间可能不存在或只有半份字段。归一化必须校验 `noteId`/`time`/`user.userId`/`imageList`，缺就返回 `missing_data`。`time` 缺失时 `toBeijingIso` 抛 `RangeError: Invalid time value`，不校验就会一路冒泡到面板顶层。
 - **顶层 try/catch 不要把自身异常标成注入失败**。侧边栏自己的错误用 `panel_error`，否则提示会把人指向「重新加载扩展」这个错误方向。
+- **`chrome.tabs.onUpdated` 必须过滤**。它在一次导航里触发好几次（`loading`、title、favicon、`complete`），而且**别的标签页更新也会触发**。不过滤就会并发跑起好几个判定周期：日志刷屏、注入白做好几遍。只认 `tab.active` 且 `info.url` 有值或 `info.status === 'complete'`。
 - **不能遍历 `noteDetailMap` 取首个非空 key**：里面有 `""` 和 `"undefined"` 脏 key，会拿到错误数据。必须用精确 id 索引。
 - **`desc` 里会重复一遍话题标签**（`#名字[话题]#`，可连写，截断时剩一个孤立 `#`）。落盘的 `content` 要剔掉，`tags` 取自 `tagList`。原文保留在 `raw.desc`。
 - **`lastUpdateTime` 就是页面上「编辑于 …」的时间**，毫秒时间戳，归档为 `last_edited_at`。
