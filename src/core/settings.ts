@@ -1,5 +1,3 @@
-import { todayBeijing } from './time';
-
 /**
  * 目录名强制 ASCII：macOS 用 NFD 保存中文文件名，
  * 进 Git 后在其他平台会显示为乱码或被识别成不同路径。
@@ -40,7 +38,7 @@ export function randomCollectorId(): string {
  * 和 note.json 里；路径里带采集者名，接管之后目录名就跟实际采集者对不上了。
  */
 export function defaultDatasetPath(): string {
-  return `collected/${todayBeijing()}`;
+  return 'collected';
 }
 
 const KEYS = ['collector', 'datasetPath'];

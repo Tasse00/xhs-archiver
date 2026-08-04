@@ -1,20 +1,22 @@
 import type { Pointer } from '../../types';
-import { isValidDatasetPath } from '../../core/settings';
 import { dirOf } from './Record';
+import { isValidDatasetPath } from '../../core/settings';
 
 export type ArchiveMode = 'new' | 'update' | 'migrate';
 
-export function PathField({ value, onChange }: { value: string; onChange(v: string): void }) {
-  const bad = !isValidDatasetPath(value);
+export function PathDisplay({
+  value, onEdit, disabled = false,
+}: {
+  value: string;
+  onEdit(): void;
+  disabled?: boolean;
+}) {
   return (
-    <>
-      <label className={bad ? 'field is-bad' : 'field'}>
-        <span>写入路径</span>
-        <input value={value} spellCheck={false} onChange={(e) => onChange(e.target.value)} />
-      </label>
-      {/* 路径不合法就当场说清规则并禁用按钮，不要等点了才报错 */}
-      {bad && <div className="field-err">每一段只能用小写字母、数字、连字符、下划线，且不能以 _index 开头</div>}
-    </>
+    <div className="path-display">
+      <span className="path-label">写入路径</span>
+      <span className="path-value mono" title={value}>{value}</span>
+      <button className="path-edit" disabled={disabled} onClick={onEdit}>· 修改</button>
+    </div>
   );
 }
 

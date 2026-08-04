@@ -84,6 +84,7 @@ export function App() {
   const [log, setLog] = useState<LogEntry[]>([]);
   // 顶栏点「采集者」进来的改设置界面。null 表示没在改。
   const [editingCollector, setEditingCollector] = useState(false);
+  const [editingPath, setEditingPath] = useState(false);
   // 判定周期序号，用来作废被新触发取代的旧周期。见 refresh。
   const genRef = useRef(0);
 
@@ -113,23 +114,13 @@ export function App() {
         setRootName(handle.name);
         if (await hasPermission(handle)) await attachRoot(handle);
       }
-      // 存过路径 = 之前确认过，不再拦一次；没存过就用今天的日期起个头。
+      // 存过路径 = 之前确认过，不再拦一次；没存过就保留 collected 默认值。
       if (st.datasetPath !== null) {
         setDatasetPath(st.datasetPath);
         setPathConfirmed(true);
       }
     })();
   }, [attachRoot]);
-
-  // 底部改过的路径要记住，否则下次打开侧边栏又回到旧值——确认页上已经承诺
-  // 「改完会记住」。防抖是因为这是逐字输入触发的。
-  useEffect(() => {
-    if (!pathConfirmed || !collector || !isValidDatasetPath(datasetPath)) return;
-    const t = setTimeout(() => {
-      void saveSettings(chromeLocalArea, { collector, datasetPath });
-    }, 500);
-    return () => clearTimeout(t);
-  }, [pathConfirmed, collector, datasetPath]);
 
   const refresh = useCallback(async (attempt = 0, gen?: number) => {
     // 一次判定周期共用一个序号，重试沿用它。周期开始后又来了新的触发，
@@ -260,10 +251,13 @@ export function App() {
     setEditingCollector(false);
   }
 
-  async function confirmPath() {
+  async function savePath(value: string) {
     if (!collector) return;
-    await saveSettings(chromeLocalArea, { collector, datasetPath });
+    if (!isValidDatasetPath(value)) return;
+    await saveSettings(chromeLocalArea, { collector, datasetPath: value });
+    setDatasetPath(value);
     setPathConfirmed(true);
+    setEditingPath(false);
   }
 
   async function doArchive(mode: ArchiveMode) {
@@ -345,6 +339,13 @@ export function App() {
           onSave={(id) => void saveCollector(id)}
           onCancel={() => setEditingCollector(false)}
         />
+      ) : editingPath ? (
+        <PathSetup
+          initial={datasetPath}
+          rootName={rootName}
+          onSave={(value) => void savePath(value)}
+          onCancel={() => setEditingPath(false)}
+        />
       ) : state.kind === 'need_root' ? (
         <RootSetup onPick={() => void pickRoot()} />
       ) : state.kind === 'need_permission' ? (
@@ -353,17 +354,16 @@ export function App() {
         <CollectorSetup initial={null} onSave={(id) => void saveCollector(id)} />
       ) : state.kind === 'need_path' ? (
         <PathSetup
-          value={datasetPath}
+          initial={datasetPath}
           rootName={rootName}
-          onChange={setDatasetPath}
-          onConfirm={() => void confirmPath()}
+          onSave={(value) => void savePath(value)}
         />
       ) : (
         <NoteView
           state={state}
           collector={collector ?? ''}
           datasetPath={datasetPath}
-          onDatasetPathChange={setDatasetPath}
+          onEditDatasetPath={() => setEditingPath(true)}
           onArchive={(m) => void doArchive(m)}
           progress={progress}
           message={message}

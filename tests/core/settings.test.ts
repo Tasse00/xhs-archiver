@@ -57,12 +57,9 @@ describe('randomCollectorId', () => {
 });
 
 describe('defaultDatasetPath', () => {
-  // 不按采集者分目录：一篇笔记在仓库里只有一份，谁采的记在指针和 note.json 里。
-  // 路径里带采集者名，接管之后目录名就会跟实际采集者对不上。
-  it('形如 collected/{YYYY-MM-DD}', () => {
-    const p = defaultDatasetPath();
-    expect(p).toMatch(/^collected\/\d{4}-\d{2}-\d{2}$/);
-    expect(isValidDatasetPath(p)).toBe(true);
+  // 日期是使用者可选的二级分类，不是会随时间暗中变化的默认值。
+  it('默认固定为 collected', () => {
+    expect(defaultDatasetPath()).toBe('collected');
   });
 });
 
@@ -74,6 +71,13 @@ describe('loadSettings / saveSettings', () => {
     const area = fakeArea();
     await saveSettings(area, { collector: 'zach', datasetPath: 'zach/2026-08-03' });
     expect(await loadSettings(area)).toEqual({ collector: 'zach', datasetPath: 'zach/2026-08-03' });
+  });
+  it('旧的带日期路径会原样恢复', async () => {
+    const area = fakeArea();
+    Object.assign(area.data, { collector: 'zach', datasetPath: 'collected/2026-08-04' });
+    expect(await loadSettings(area)).toEqual({
+      collector: 'zach', datasetPath: 'collected/2026-08-04',
+    });
   });
   it('拒绝保存非法采集者 ID', async () => {
     await expect(saveSettings(fakeArea(), { collector: '张三', datasetPath: null }))

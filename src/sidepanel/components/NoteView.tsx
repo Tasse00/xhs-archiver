@@ -4,7 +4,7 @@ import type { PanelState, UnreadableReason } from '../usePanelState';
 import { Empty } from './Empty';
 import { NoteCard } from './NoteCard';
 import { Record } from './Record';
-import { ArchiveActions, PathField, type ArchiveMode } from './Actions';
+import { ArchiveActions, PathDisplay, type ArchiveMode } from './Actions';
 import {
   IconCheck, IconCross, IconDoc, IconGlobe, IconLoading, IconPlug, IconVideo,
 } from './Icons';
@@ -128,12 +128,12 @@ function Result({ outcome }: { outcome: ArchiveOutcome }) {
 }
 
 export function NoteView({
-  state, collector, datasetPath, onDatasetPathChange, onArchive, progress, message, justArchived,
+  state, collector, datasetPath, onEditDatasetPath, onArchive, progress, message, justArchived,
 }: {
   state: PanelState;
   collector: string;
   datasetPath: string;
-  onDatasetPathChange(v: string): void;
+  onEditDatasetPath(): void;
   onArchive(mode: ArchiveMode): void;
   progress: { done: number; total: number } | null;
   message: string | null;
@@ -148,7 +148,7 @@ export function NoteView({
       <>
         {body}
         <div className="pt-act">
-          <PathField value={datasetPath} onChange={onDatasetPathChange} />
+          <PathDisplay value={datasetPath} onEdit={onEditDatasetPath} disabled={progress !== null} />
         </div>
       </>
     );
@@ -266,6 +266,7 @@ export function NoteView({
       </div>
 
       <div className="pt-act">
+        <PathDisplay value={datasetPath} onEdit={onEditDatasetPath} disabled={progress !== null} />
         {progress ? (
           <>
             <div className="sect-h">正在下载图片 <b>{progress.done} / {progress.total}</b></div>
@@ -276,7 +277,6 @@ export function NoteView({
           </>
         ) : (
           <>
-            <PathField value={datasetPath} onChange={onDatasetPathChange} />
             <ArchiveActions
               existing={a.existing}
               datasetPath={datasetPath}

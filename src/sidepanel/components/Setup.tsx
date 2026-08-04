@@ -76,36 +76,48 @@ export function CollectorSetup({
  * 路径决定了仓库的组织方式，必须在采第一篇之前摆到眼前一次。
  */
 export function PathSetup({
-  value, rootName, onChange, onConfirm,
+  initial, rootName, onSave, onCancel,
 }: {
-  value: string;
+  initial: string;
   rootName: string | null;
-  onChange(v: string): void;
-  onConfirm(): void;
+  onSave(v: string): void;
+  onCancel?(): void;
 }) {
+  const [value, setValue] = useState(initial);
   const valid = isValidDatasetPath(value);
+  const editing = onCancel !== undefined;
   return (
     <div className="pt-body">
       <div className="empty">
         <IconPath />
-        <h2>确认存放位置</h2>
+        <h2>{editing ? '修改采集写入路径' : '设置采集写入路径'}</h2>
         <p>
-          这次采集的笔记会写到 <b>{rootName ?? '数据仓库'}</b> 下面的这个路径里。
-          按日期分是默认做法，也可以改成按主题分。
+          采集的笔记会写到 <b>{rootName ?? '数据仓库'}</b> 下面的这个路径里。
+          默认统一存放在 <code>collected</code>。你也可以添加二级路径进行分类，
+          例如按日期使用 <code>collected/2026-08-04</code>，或按主题使用
+          {' '}<code>collected/outfit</code>。路径不会随日期自动变化，需要时请手动修改。
         </p>
         <label className="field">
           <span>写入路径</span>
-          <input value={value} spellCheck={false} onChange={(e) => onChange(e.target.value)} />
+          <input
+            value={value}
+            spellCheck={false}
+            aria-invalid={!valid}
+            aria-describedby={valid ? undefined : 'dataset-path-error'}
+            onChange={(e) => setValue(e.target.value)}
+          />
         </label>
         {valid ? (
           <div className="path-preview mono">{rootName ?? '<数据仓库>'}/{value}/{'{笔记ID}'}/</div>
         ) : (
-          <div className="field-err">每一段只能用小写字母、数字、连字符、下划线，且不能以 _index 开头</div>
+          <div id="dataset-path-error" className="field-err" role="alert">
+            每一段只能用小写字母、数字、连字符、下划线，且不能以 _index 开头
+          </div>
         )}
-        <button className="btn btn-primary" disabled={!valid} onClick={onConfirm}>
-          就用这个路径
+        <button className="btn btn-primary" disabled={!valid} onClick={() => onSave(value)}>
+          {editing ? '保存修改' : '使用这个路径'}
         </button>
-        <p className="hint">采集时在底部还能随时改，改完会记住。</p>
+        {onCancel && <button className="btn btn-sm" onClick={onCancel}>取消</button>}
       </div>
     </div>
   );
