@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toReadStore, type ReadStore } from '../core/read-store';
 import type { Store } from '../core/store';
 import { noteKeyOf } from '../core/browse/scope';
 import { PermissionGate } from './components/PermissionGate';
 import { Tree } from './components/Tree';
 import { Table } from './components/Table';
+import { DetailPane } from './components/DetailPane';
 import { useScope } from './hooks/useScope';
 import { useRows } from './hooks/useRows';
 import { useThumbnail } from './hooks/useThumbnail';
@@ -21,9 +22,31 @@ export function App() {
 
   const { tree, refs, selected, select, progress, reload } = useScope(store);
   const total = useMemo(() => tree.reduce((a, n) => a + n.count, 0), [tree]);
-  const { stateOf, request } = useRows(store, refs);
+  const { stateOf, request, sink } = useRows(store, refs);
   const { thumbUrl, forget } = useThumbnail(store);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+
+  const [detailOpen, setDetailOpen] = useState(true);
+  const [paneWidth, setPaneWidth] = useState(() => Number(localStorage.getItem('bw.paneWidth') ?? 380));
+  const [cursor, setCursor] = useState(0);
+
+  useEffect(() => { localStorage.setItem('bw.paneWidth', String(paneWidth)); }, [paneWidth]);
+
+  // ↑↓ 换行、Enter 开详情、Esc 关详情。看图器自己也监听 Esc，
+  // 它在更内层且会 stopPropagation 之外还先执行，所以不会互相打架
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setCursor((c) => Math.min(refs.length - 1, c + 1)); }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setCursor((c) => Math.max(0, c - 1)); }
+      if (e.key === 'Enter') setDetailOpen(true);
+      if (e.key === 'Escape') setDetailOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [refs.length]);
+
+  const current = refs[cursor];
+  const currentKey = current ? noteKeyOf(current) : null;
+  const currentState = current ? stateOf(current) : null;
 
   return (
     <div className="bw">
@@ -45,11 +68,36 @@ export function App() {
               request={request}
               thumbUrl={thumbUrl}
               forget={forget}
-              wide
-              selectedKey={selectedKey}
-              onSelect={(r) => setSelectedKey(noteKeyOf(r))}
+              wide={!detailOpen}
+              selectedKey={currentKey}
+              onSelect={(r) => { setCursor(refs.findIndex((x) => noteKeyOf(x) === noteKeyOf(r))); setDetailOpen(true); }}
             />
           </div>
+          {detailOpen && current && currentState?.kind === 'ready' && store && (
+            <>
+              <div
+                className="bw-resizer"
+                onMouseDown={(e) => {
+                  const x0 = e.clientX;
+                  const w0 = paneWidth;
+                  const move = (ev: MouseEvent) => setPaneWidth(Math.min(720, Math.max(280, w0 - (ev.clientX - x0))));
+                  const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+                  window.addEventListener('mousemove', move);
+                  window.addEventListener('mouseup', up);
+                }}
+              />
+              <div style={{ width: paneWidth, flex: 'none', display: 'flex' }}>
+                <DetailPane
+                  store={store}
+                  noteRef={current}
+                  meta={currentState.meta}
+                  detail={sink.details.get(currentKey!)!}
+                  onClose={() => setDetailOpen(false)}
+                  thumbUrl={thumbUrl}
+                />
+              </div>
+            </>
+          )}
         </div>
       </PermissionGate>
     </div>

@@ -94,3 +94,47 @@ body { font-size: 13px; background: var(--paper); }
   flex: none; padding: 5px 10px; font-size: 11px; color: var(--ink-3);
   border-top: 1px solid var(--line); background: var(--surface);
 }
+
+/* ── 详情栏 ───────────────────────────────────────────── */
+.bw-resizer { flex: none; width: 4px; cursor: col-resize; background: var(--line); }
+.bw-resizer:hover { background: var(--line-2); }
+
+.bw-detail {
+  flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column;
+  border-left: 1px solid var(--line); background: var(--surface);
+}
+.bw-detail-bar {
+  flex: none; display: flex; align-items: center; gap: 8px; justify-content: space-between;
+  padding: 6px 10px; border-bottom: 1px solid var(--line);
+}
+.bw-detail-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px 12px; }
+.bw-detail-body h3 { margin: 8px 0 4px; font-size: 14px; }
+.bw-detail-body p { margin: 3px 0; font-size: 12px; color: var(--ink-2); }
+.bw-content { white-space: pre-wrap; color: var(--ink) !important; }
+.bw-dim { color: var(--ink-3); }
+
+.bw-thumbs { display: flex; flex-wrap: wrap; gap: 4px; }
+.bw-thumb {
+  width: 72px; height: 72px; border-radius: 5px; background: var(--sunk);
+  overflow: hidden; display: block; cursor: zoom-in;
+}
+.bw-thumb.missing { outline: 1px dashed var(--accent); cursor: not-allowed; }
+.bw-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.bw-note { padding: 5px 8px; border-radius: 6px; font-size: 12px; }
+.bw-note.warn { background: var(--warn-w); color: var(--warn); }
+.bw-note.bad { background: var(--accent-w); color: var(--accent); }
+
+.bw-cmt { font-size: 12px; color: var(--ink-2); padding: 2px 0; }
+
+/* ── 看图器 ───────────────────────────────────────────── */
+.bw-lightbox {
+  position: fixed; inset: 0; z-index: 10; background: rgba(0,0,0,.86);
+  display: flex; flex-direction: column;
+}
+.bw-lb-bar {
+  flex: none; display: flex; justify-content: space-between; gap: 12px;
+  padding: 8px 14px; color: #ddd; font-size: 12px;
+}
+.bw-lb-img { flex: 1 1 auto; min-height: 0; display: grid; place-items: center; padding: 12px; }
+.bw-lb-img img { max-width: 100%; max-height: 100%; object-fit: contain; }
