@@ -1,9 +1,13 @@
 import { useCallback, useMemo, useState } from 'react';
 import { toReadStore, type ReadStore } from '../core/read-store';
 import type { Store } from '../core/store';
+import { noteKeyOf } from '../core/browse/scope';
 import { PermissionGate } from './components/PermissionGate';
 import { Tree } from './components/Tree';
+import { Table } from './components/Table';
 import { useScope } from './hooks/useScope';
+import { useRows } from './hooks/useRows';
+import { useThumbnail } from './hooks/useThumbnail';
 
 export function App() {
   const [store, setStore] = useState<ReadStore | null>(null);
@@ -17,6 +21,9 @@ export function App() {
 
   const { tree, refs, selected, select, progress, reload } = useScope(store);
   const total = useMemo(() => tree.reduce((a, n) => a + n.count, 0), [tree]);
+  const { stateOf, request } = useRows(store, refs);
+  const { thumbUrl, forget } = useThumbnail(store);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   return (
     <div className="bw">
@@ -32,7 +39,16 @@ export function App() {
         <div className="bw-main">
           <Tree tree={tree} total={total} selected={selected} onSelect={select} />
           <div className="bw-list">
-            <p className="bw-empty">列表在下一个任务里接上（当前范围 {refs.length} 篇）</p>
+            <Table
+              refs={refs}
+              stateOf={stateOf}
+              request={request}
+              thumbUrl={thumbUrl}
+              forget={forget}
+              wide
+              selectedKey={selectedKey}
+              onSelect={(r) => setSelectedKey(noteKeyOf(r))}
+            />
           </div>
         </div>
       </PermissionGate>

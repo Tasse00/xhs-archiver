@@ -55,3 +55,42 @@ body { font-size: 13px; background: var(--paper); }
 
 .bw-list { flex: 1 1 auto; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
 .bw-empty { color: var(--ink-3); padding: 16px; }
+
+/* ── 表格 ─────────────────────────────────────────────── */
+.bw-table { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+
+.bw-head, .bw-row {
+  display: flex; align-items: center; gap: 8px; padding: 0 10px;
+  font-variant-numeric: tabular-nums;
+}
+.bw-head {
+  flex: none; height: 30px; font-size: 11px; color: var(--ink-3);
+  border-bottom: 1px solid var(--line); background: var(--surface);
+}
+.bw-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.bw-row {
+  position: absolute; left: 0; right: 0; height: 44px;
+  border-bottom: 1px solid var(--line); font-size: 12px; color: var(--ink-2);
+}
+.bw-row:hover { background: var(--sunk); }
+.bw-row.on { background: var(--accent-w); color: var(--ink); }
+.bw-row.dim { color: var(--ink-3); }
+.bw-row.err { color: var(--accent); }
+
+.bw-cover {
+  flex: none; width: 30px; height: 30px; border-radius: 4px;
+  background: var(--sunk); overflow: hidden; display: block;
+}
+.bw-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.c-cover { flex: none; width: 30px; }
+.c-title { flex: 2 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.c-author { flex: none; width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-num { flex: none; width: 52px; text-align: right; }
+.c-time { flex: none; width: 88px; }
+.c-path { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-3); }
+
+.bw-foot {
+  flex: none; padding: 5px 10px; font-size: 11px; color: var(--ink-3);
+  border-top: 1px solid var(--line); background: var(--surface);
+}
