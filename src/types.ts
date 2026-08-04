@@ -49,6 +49,8 @@ export interface ExtractedNote {
   content: string;
   tags: string[];
   publishedAt: string;
+  /** 作者最后一次编辑的时间；从未编辑过时与 publishedAt 相差不到一秒。 */
+  lastEditedAt: string;
   author: { user_id: string; nickname: string; avatar_url: string; profile_url: string };
   interact: { liked: number; collected: number; comment: number; share: number };
   images: ExtractedImage[];
@@ -87,6 +89,7 @@ export interface NoteRecord {
   content: string;
   tags: string[];
   published_at: string;
+  last_edited_at: string;
   author: ExtractedNote['author'];
   interact: ExtractedNote['interact'];
   images: ImageRecord[];

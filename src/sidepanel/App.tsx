@@ -1,13 +1,27 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createStore, type Store } from '../core/store';
 import { loadRootHandle, saveRootHandle, ensurePermission } from '../core/handle-store';
 import { chromeLocalArea, loadSettings, saveSettings, defaultDatasetPath, isValidDatasetPath } from '../core/settings';
 import { ensureRepoTemplates } from '../core/repo-template';
 import { archive } from '../core/archiver';
-import { readNoteViaTab } from '../page/read-note';
-import { resolvePanelState, type PanelState } from './usePanelState';
+import { readNoteViaTab, type PageDiag } from '../page/read-note';
+import { isTransient, resolvePanelState, type PanelState } from './usePanelState';
+import { appendLog, buildLogEntry, type LogEntry } from './log';
 import { RootSetup, CollectorSetup } from './components/Setup';
-import { NoteView } from './components/NoteView';
+import { NoteView, type ArchiveOutcome } from './components/NoteView';
+import { LogView } from './components/LogView';
+
+/** 重读的间隔，递增。用尽了才认定是真失败。 */
+const RETRY_DELAYS = [300, 700, 1500];
+
+function pushLog(
+  setLog: (fn: (prev: LogEntry[]) => LogEntry[]) => void,
+  state: PanelState,
+  tabUrl: string,
+  diag: PageDiag | null,
+) {
+  setLog((prev) => appendLog(prev, buildLogEntry(state, tabUrl, diag, new Date())));
+}
 
 export function App() {
   const [store, setStore] = useState<Store | null>(null);
@@ -17,6 +31,10 @@ export function App() {
   const [state, setState] = useState<PanelState>({ kind: 'need_root' });
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  // 「刚刚采完」与「以前采过」在 mine 状态下长得一样，必须显式区分，
+  // 否则用户点完按钮看到的是一段历史记录，无法确认本次是否成功。
+  const [justArchived, setJustArchived] = useState<ArchiveOutcome | null>(null);
+  const [log, setLog] = useState<LogEntry[]>([]);
 
   const attachRoot = useCallback(async (handle: FileSystemDirectoryHandle) => {
     if (!(await ensurePermission(handle))) {
@@ -43,18 +61,57 @@ export function App() {
     })();
   }, [attachRoot]);
 
-  const refresh = useCallback(async () => {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    setState(
-      await resolvePanelState({
+  const refresh = useCallback(async (attempt = 0) => {
+    // 任何一步抛出都会让面板静默停在旧状态，比报错更难排查，所以整体兜住。
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      // 换了标签页或换了笔记，上一次的采集结果就不再是「本次」的了。
+      setJustArchived(null);
+      setMessage(null);
+
+      let diag: PageDiag | null = null;
+      const next = await resolvePanelState({
         hasRoot: store !== null,
         store: store ?? createStore({} as FileSystemDirectoryHandle),
         collector,
         tabUrl: tab?.url ?? '',
-        readNote: () => readNoteViaTab(tab!.id!),
-      }),
-    );
+        onDiag: (d) => { diag = d; },
+        readNote: async () =>
+          tab?.id === undefined
+            ? {
+                ok: false,
+                reason: 'inject_failed',
+                detail: '当前窗口没有活动标签页',
+                diag: { pathname: '', urlId: null, currentNoteId: null, mapKeys: [], entryFound: false },
+              }
+            : readNoteViaTab(tab.id),
+      });
+      // 日志始终记真实判定结果，排查时不能丢掉中间态。
+      pushLog(setLog, next, tab?.url ?? '', diag);
+
+      // 页面数据是异步填充的：SPA 一改 URL 就触发重读，而这篇笔记的数据往往
+      // 还没填进 store。这时显示错误纯属吓人——它多半几百毫秒后就自己好了。
+      // 所以先挂「读取中」，重试用尽了才把真错误摆出来。
+      const transient = next.kind === 'unreadable' && isTransient(next.reason);
+      if (transient && attempt < RETRY_DELAYS.length) {
+        setState({ kind: 'reading' });
+        setTimeout(() => void refreshRef.current?.(attempt + 1), RETRY_DELAYS[attempt]);
+        return;
+      }
+      setState(next);
+    } catch (e) {
+      // 这里兜住的是侧边栏自身的异常，不是注入失败。标成 inject_failed 会把
+      // 排查方向指到扩展权限上去，而真正的原因可能在别处。
+      const detail = e instanceof Error ? e.message : String(e);
+      const failed: PanelState = { kind: 'unreadable', reason: 'panel_error', detail };
+      setState(failed);
+      pushLog(setLog, failed, '', null);
+    }
   }, [store, collector]);
+
+  // refresh 要在自己内部延时重调自己，用 ref 绕开闭包里的循环依赖。
+  const refreshRef = useRef<((attempt?: number) => Promise<void>) | null>(null);
+  refreshRef.current = refresh;
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -101,13 +158,10 @@ export function App() {
       onProgress: (done, total) => setProgress({ done, total }),
     });
     setProgress(null);
-    setMessage(
-      res.status === 'complete'
-        ? `已采集到 ${res.path}`
-        : `部分失败，未写入索引：${res.failures.join('；')}`,
-    );
     await saveSettings(chromeLocalArea, { collector, datasetPath });
+    // 必须先 refresh 再记结果：refresh 会清空「本次」标记。
     await refresh();
+    setJustArchived({ mode, status: res.status, path: res.path, failures: res.failures });
   }
 
   return (
@@ -127,9 +181,12 @@ export function App() {
           onArchive={doArchive}
           progress={progress}
           message={message}
+          justArchived={justArchived}
         />
       )}
       {message && (state.kind === 'need_root' || state.kind === 'need_collector') && <p>{message}</p>}
+
+      <LogView log={log} onRefresh={() => void refresh()} />
     </main>
   );
 }

@@ -59,7 +59,7 @@ chrome.scripting.executeScript({
   world: "MAIN",
   func: () => {
     const s = window.__INITIAL_STATE__.note;
-    const id = String(s.currentNoteId._value);
+    const id = /\/explore\/([0-9a-f]+)/.exec(location.pathname)[1];
     return structuredClone(s.noteDetailMap[id].note);
   },
 });
@@ -67,10 +67,40 @@ chrome.scripting.executeScript({
 
 `world: "MAIN"` 是必需的——隔离世界读不到页面的全局变量。
 
-两条经实测确认的硬性细节：
+四条经实测确认的硬性细节：
 
-1. **必须用 `note.currentNoteId._value` 定位**（它是 Vue ref）。`noteDetailMap` 中存在 `""` 与 `"undefined"` 等脏 key，遍历取首个非空 key 会拿到错误数据。
-2. **返回值可安全穿过扩展边界**：`noteDetailMap[id].note` 是纯数据（实测可 `structuredClone`，约 4.4 KB）。而 `__INITIAL_STATE__.note` 这一层含 `dep`/`computed` 循环引用，**不可整体序列化**，只能取 `.note` 子对象。
+1. **用页面自己的 `location.pathname` 里的 note id 定位。** 另外两个候选都不可靠：
+   - `note.currentNoteId._value`（Vue ref）会在 modal 关闭后被重置为空字符串，而此时 `noteDetailMap` 里的数据仍然完好——照它取就会误报「读不到笔记」。
+   - 侧边栏拿到的 `tab.url` 会**滞后于 SPA 的实际地址**。modal 开关只改 history，关掉 modal 后 `tab.url` 可能还带着上一篇的 id，据此判定就会去取一篇根本没在看的笔记。
+
+   `currentNoteId` 只在 URL 上没有 id 时作兜底。`tab.url` 只用来判断域名（SPA 导航不改域名）。
+2. **不能遍历 `noteDetailMap` 取首个非空 key**：其中存在 `""` 与 `"undefined"` 等脏 key，会拿到错误数据。必须用精确 id 索引。
+3. **用 `JSON.parse(JSON.stringify(...))` 而不是 `structuredClone`。** 只取 `noteDetailMap[id].note` 子对象——其父层含 `dep`/`computed` 循环引用，不可整体序列化。取子对象后 JSON round-trip 的产物是纯 JSON，既能穿透 Vue 的响应式包装，也保证一定能跨扩展边界；`structuredClone` 的产物不一定能，实测出现过结果在传回时丢失、调用方只拿到 `undefined` 的情况。落盘本来就是 JSON，没有信息损失。
+4. **注入函数必须全程 try/catch 且始终返回值。** 抛出去会让 `executeScript` 的 `result` 变成 `undefined`，调用方只能看到「无返回值」，现场信息全丢。Chrome 会把页面内的异常放在 `InjectionResult.error` 里，调用方要读它。
+
+失败必须分类上报，不能都归成一个错误码——它们的排查方向完全相反：
+
+| 错误码 | 含义 | 方向 |
+|---|---|---|
+| `inject_failed` | 注入没跑成：权限被拒、没命中 frame、脚本被拦 | 扩展侧 |
+| `page_error` | 注入跑起来了但页面内抛异常 | 看错误原文 |
+| `no_state` | 页面上没有 `__INITIAL_STATE__` | 登录态 / 页面没加载完 |
+| `no_note` | 有全局数据但取不到这篇 | 页面状态或时序 |
+| `incomplete_data` | 取到了但 note 只填了一半 | 等一下重试 |
+| `panel_error` | 侧边栏自己抛异常，与页面无关 | 扩展代码 |
+
+最后两个都不能省。侧边栏顶层的 try/catch 如果把自身异常也标成 `inject_failed`，就会把排查方向指到扩展权限上——实测踩过：一处 `RangeError: Invalid time value` 被显示成「注入页面脚本失败，重新加载扩展后再试」。
+
+#### 数据是异步填充的
+
+`noteDetailMap[id]` 从无到有、从半份到完整都需要时间，实测点开 modal 的瞬间 entry 可能还不存在。因此：
+
+- **归一化必须校验必需字段**（`noteId`、`time`、`user.userId`、`imageList`），缺任何一个都返回 `missing_data`，绝不带着坏值往下走——落盘的 `note.json` 是要进 Git 的。尤其 `time`：缺失时 `toBeijingIso` 会抛 `RangeError`，而不是产出一个显眼的坏值。
+- **`no_note` 与 `incomplete_data` 自动重读**（300 / 700 / 1500 ms 三次）。它们是可能自愈的；其余错误码重试多少次都一样，只会刷屏。
+- **重试期间显示「正在读取页面数据…」，不显示错误。** SPA 一改 URL 就触发重读，而笔记数据往往还没填进 store，这时把错误摆出来纯属吓人——它多半几百毫秒后自己就好了。用户看到的「先报读不到、再跳出笔记」就是这个中间态泄漏。真错误只在重试用尽后才显示。
+- **工作日志仍然如实记录每一次判定**，包括被隐藏的中间态，否则排查时看不出重试过几次。
+
+每次读取都回传一份现场快照（`pathname`、`urlId`、`currentNoteId`、`mapKeys`、是否命中、异常原文），侧边栏据此显示工作日志。这几个量一起看才能判断问题出在哪一层，尤其是 `tab.url` 与 `pathname` 的差异——它俩对不上就是 SPA 导航后 tab 地址滞后。
 
 #### 登录态是前提
 
@@ -149,6 +179,8 @@ _index/68/68a1b2c3d4e5f6/
 - **`raw` 字段递归按 key 排序。** 实测 note 的字段顺序在独立页、首页 modal、搜索 modal 三种入口下并不一致，不排序则同一篇笔记换个入口重采就会整块重写。
 - **时间戳固定 `+08:00` 偏移，不使用机器本地时区，不含毫秒。** 否则不同时区的协作者会为同一时刻生成不同字符串。
 
+`content` 是剔除话题标签后的正文：原始 `desc` 会把话题重复一遍（`#名字[话题]#`），而 `tags` 已从 `tagList` 单独取过，正文再留一份既冗余又影响阅读。只剔除带 `[话题]#` 的完整形态，作者手写的普通 `#` 保留。未经处理的原文始终在 `raw.desc` 里。
+
 ```jsonc
 {
   "schema_version": 1,
@@ -159,6 +191,7 @@ _index/68/68a1b2c3d4e5f6/
   "content": "…",
   "tags": ["穿搭", "秋冬"],
   "published_at": "2026-07-28T10:22:00+08:00",
+  "last_edited_at": "2026-07-30T09:10:00+08:00",
   "author": {
     "user_id": "5f8a…",
     "nickname": "…",
@@ -256,7 +289,7 @@ _index/68/68a1b2c3d4e5f6/
      │ ① 用户点击采集
      │   executeScript({ world: 'MAIN' })
      │←─────────────────────────────│
-     │ ② 返回 noteDetailMap[currentNoteId._value].note
+     │ ② 返回 noteDetailMap[URL 里的 note id].note
      │─────────────────────────────→│
                                     │ ③ 归一化 → NoteRecord
                                     │ ④ 查 _index ────────────────→ 已采过？谁采的？
@@ -345,7 +378,7 @@ if (note.type === "video") return "unsupported_video";
 未授权 root 目录
   → 未设采集者 ID
     → 当前 tab 非小红书
-      → 非笔记页
+      → 非笔记页 / 读取中（数据未就绪，自动重读）
         → 视频笔记（拒绝，说明原因）
           → 他人已采集（阻止，显示对方 ID / 时间 / 路径）
             → 自己已采集（更新原处 or 迁移到当前数据集）
@@ -353,6 +386,12 @@ if (note.type === "video") return "unsupported_video";
 ```
 
 这些状态的交叉组合正是选择 React 而非手写 DOM 的原因。
+
+「非笔记页」的判定依据是**页面自己报的 pathname**，不是 `tab.url`（理由见 3.5）。页面说当前地址上没有笔记 id，那就是用户没打开笔记，而不是读取失败——这两者给用户的指引完全不同。
+
+侧边栏底部常驻一个可折叠的**工作日志**，逐次记录判定结果与现场快照。归档工具出问题时，用户能给出的信息通常只有一句「读不到」，日志是唯一能把问题定位到层的手段。日志里的 `tab.url` 去掉 query（`xsec_token` 会过期，留着既没用又是多余的泄露面）。
+
+**「本次刚采完」必须与「以前采过」区分显示。** 两者在数据上都是「自己已采集」，但用户点完按钮需要的是本次操作的确认，看到一段历史记录会以为没生效。因此采集结果单独作为一次性提示呈现，并在切换标签页或切换笔记时清除——它一旦不再对应当前笔记就是误导。
 
 ## 9. 假设验证状态
 
@@ -363,7 +402,13 @@ if (note.type === "video") return "unsupported_video";
 | 结论 | 影响 |
 |---|---|
 | **登录态下三种入口均可读 `__INITIAL_STATE__.note.noteDetailMap`**，`readyState: complete` 时依然存在 | 推翻未登录会话的「已被删除」结论，撤销整套桥接脚本，回到 3.5 的 `executeScript` |
-| 必须用 `currentNoteId._value` 定位；`noteDetailMap` 含 `""`/`"undefined"` 脏 key | 写入 3.5 |
+| **`currentNoteId._value` 会在 modal 关闭后被重置为 `""`**，而 `noteDetailMap` 里的数据仍完好 | 改用页面 `location` 里的 note id 定位，见 3.5 |
+| **侧边栏拿到的 `tab.url` 会滞后于 SPA 实际地址**：关掉 modal 后仍带着上一篇的 id | 「是不是在看笔记」只能由页面自己回答，`tab.url` 仅用于判域名 |
+| 页面上很多笔记的 `title` 为空，正文首行才是页面上看到的那句话 | 侧边栏标题为空时取正文首行并标注，否则会被误认为读错了笔记 |
+| **`noteDetailMap[id]` 是异步填充的**，点开 modal 瞬间 entry 可能不存在或只有半份字段 | 归一化校验必需字段；`no_note`/`incomplete_data` 自动重试一次 |
+| `noteDetailMap` 含 `""`/`"undefined"` 脏 key，不能遍历取首个非空 key | 写入 3.5 |
+| `desc` 末尾（有时中间）重复一遍话题标签，形如 `#名字[话题]#`，可连写；平台截断时会剩一个孤立 `#` | 落盘前从正文剔除，`tags` 仍取自 `tagList` |
+| `lastUpdateTime` 为毫秒时间戳，即页面上「编辑于 …」所示时间；未编辑过的笔记它与 `time` 也可能差几百毫秒 | 归档为 `last_edited_at` |
 | `noteDetailMap[id].note` 可 `structuredClone`（约 4.4 KB）；但其父层含 `dep`/`computed` 循环引用 | 只取 `.note` 子对象作为返回值 |
 | `interactInfo` 各字段为字符串；`time` 为毫秒时间戳；`tagList[].type === "topic"` | 归一化规则，写入 `core/extractor.ts` |
 | note 字段顺序在不同入口下不一致 | 印证 5. 的固定 key 顺序要求 |

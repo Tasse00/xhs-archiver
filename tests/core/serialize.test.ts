@@ -11,6 +11,7 @@ const base: NoteRecord = {
   content: 'c',
   tags: ['x'],
   published_at: '2026-05-12T12:34:14+08:00',
+  last_edited_at: '2026-07-16T13:19:16+08:00',
   author: { user_id: 'u', nickname: 'n', avatar_url: 'a', profile_url: 'p' },
   interact: { liked: 1, collected: 2, comment: 3, share: 4 },
   images: [{
@@ -34,7 +35,7 @@ describe('serializeNote', () => {
     const keys = Object.keys(JSON.parse(out));
     expect(keys).toEqual([
       'schema_version', 'note_id', 'url', 'type', 'title', 'content', 'tags',
-      'published_at', 'author', 'interact', 'images', 'archive', 'raw',
+      'published_at', 'last_edited_at', 'author', 'interact', 'images', 'archive', 'raw',
     ]);
   });
 

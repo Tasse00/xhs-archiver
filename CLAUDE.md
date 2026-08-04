@@ -2,21 +2,28 @@
 
 ## 现状
 
-小红书笔记归档 Chrome 扩展。**设计与实现计划已完成，代码一行没写。** 仓库里目前只有 `README.md`、本文件和 `docs/`。
+小红书笔记归档 Chrome 扩展。**计划里的 13 个任务已全部实现，正在真实页面上做验收。** 已在实测中修掉的问题：笔记定位（见下）、正文夹带话题标签、缺最后编辑时间、采集结果与历史记录混淆、注入失败被误报成读不到全局变量。
 
-**下一步动作：** 执行 `docs/superpowers/plans/2026-08-03-xhs-archiver-v1.md`，从 Task 1 开始。计划是 13 个 TDD 任务，每个都给了完整的测试代码与实现代码，按顺序做即可。用 `superpowers:subagent-driven-development` 或 `superpowers:executing-plans`。
+**下一步动作：** 继续按 `docs/superpowers/plans/2026-08-03-xhs-archiver-v1.md` 的 Task 13 走验收清单（24 项），修实测中暴露的问题。
 
 ## 阅读顺序
 
 1. `README.md` — 项目在做什么，数据长什么样
 2. `docs/superpowers/specs/2026-08-03-xhs-archiver-design.md` — **唯一权威设计文档**，有分歧以它为准
-3. `docs/superpowers/plans/2026-08-03-xhs-archiver-v1.md` — 逐任务执行
+3. `docs/superpowers/plans/2026-08-03-xhs-archiver-v1.md` — 实现计划，现只剩验收清单还有用
 
 ## 实测硬事实
 
 这些是在真实登录页面上验证过的，不要凭直觉改：
 
-- **定位笔记必须用 `note.currentNoteId._value`**（Vue ref）。`noteDetailMap` 里有 `""` 和 `"undefined"` 脏 key，遍历取首个非空 key 会拿到错误数据。
+- **定位笔记用页面自己的 `location.pathname`**。另外两个候选都不可靠：`currentNoteId._value` 会在 modal 关闭后被重置为 `""`；侧边栏的 `tab.url` 会滞后于 SPA 实际地址，关掉 modal 后还带着上一篇的 id。`tab.url` 只用来判域名，`currentNoteId` 只作兜底。
+- **注入脚本必须全程 try/catch 且始终返回值**，并回传现场快照（pathname / urlId / currentNoteId / mapKeys / 是否命中）。抛出去会让 `result` 变成 `undefined`，现场就全丢了。Chrome 把页面内异常放在 `InjectionResult.error` 里。
+- **取数据用 `JSON.parse(JSON.stringify(note))`，不要用 `structuredClone`**。后者的产物不一定能跨扩展边界，实测出现过传回时丢失、调用方只拿到 `undefined`。落盘本来就是 JSON。
+- **`noteDetailMap[id]` 是异步填充的**，点开 modal 瞬间可能不存在或只有半份字段。归一化必须校验 `noteId`/`time`/`user.userId`/`imageList`，缺就返回 `missing_data`。`time` 缺失时 `toBeijingIso` 抛 `RangeError: Invalid time value`，不校验就会一路冒泡到面板顶层。
+- **顶层 try/catch 不要把自身异常标成注入失败**。侧边栏自己的错误用 `panel_error`，否则提示会把人指向「重新加载扩展」这个错误方向。
+- **不能遍历 `noteDetailMap` 取首个非空 key**：里面有 `""` 和 `"undefined"` 脏 key，会拿到错误数据。必须用精确 id 索引。
+- **`desc` 里会重复一遍话题标签**（`#名字[话题]#`，可连写，截断时剩一个孤立 `#`）。落盘的 `content` 要剔掉，`tags` 取自 `tagList`。原文保留在 `raw.desc`。
+- **`lastUpdateTime` 就是页面上「编辑于 …」的时间**，毫秒时间戳，归档为 `last_edited_at`。
 - **只能取 `noteDetailMap[id].note` 子对象**。它的父层 `__INITIAL_STATE__.note` 含 `dep`/`computed` 循环引用，整体不可序列化，穿不过扩展边界。`.note` 本身干净，约 4.4 KB，可 `structuredClone`。
 - **`interactInfo` 各字段是字符串**（`"1236"`），不是数字。可能出现 `"1.2万"`、`"10万+"`。
 - **`infoList` 里没有原图**。只有 `WB_PRV` 和 `WB_DFT`，都是 1080 宽的派生图。原图须由 `fileId` 构造：`https://sns-img-qc.xhscdn.com/{fileId}`，**不需要任何 token**，CDN 也不校验 Referer。备用 host `https://ci.xiaohongshu.com/{fileId}`，实测字节数完全一致。

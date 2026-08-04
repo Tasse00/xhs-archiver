@@ -101,6 +101,7 @@ export async function archive(opts: ArchiveOptions): Promise<ArchiveResult> {
     content: note.content,
     tags: note.tags,
     published_at: note.publishedAt,
+    last_edited_at: note.lastEditedAt,
     author: note.author,
     interact: note.interact,
     images,

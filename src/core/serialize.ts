@@ -29,6 +29,7 @@ export function serializeNote(n: NoteRecord): string {
     content: n.content,
     tags: n.tags,
     published_at: n.published_at,
+    last_edited_at: n.last_edited_at,
     author: {
       user_id: n.author.user_id,
       nickname: n.author.nickname,
