@@ -66,13 +66,14 @@ Vite 6 + @crxjs/vite-plugin 2 + TypeScript 5 + React 19 + Vitest 3。
 
 核心层（`src/core/`）是纯 TypeScript，不接触 DOM 与 chrome API，依赖全部注入，可脱离浏览器单测。UI 层只订阅核心层状态。
 
-脚手架尚未建立。届时可用：
-
 ```bash
 npm install
 npm test          # vitest
 npm run build     # 产出 dist/，在 chrome://extensions 加载
+npm run icons     # 重新生成图标，改了设计才需要跑
 ```
+
+图标由 `scripts/gen-icons.mjs` 生成到 `public/icons/`（16/32/48/128 四档 PNG，外加一份 `icon.svg` 设计源）。脚本零依赖，自己做 SDF 光栅化而不是转 SVG——本机不一定有 `rsvg-convert`，而 16px 那档需要逐像素可控：48px 起画完整的「笔记卡片 + 盒盖 + 盒体 + 抠手」，16/32px 换一套只剩「卡片 + 托盘 + 一道红缝」的简化几何，否则细节窄于一个物理像素，只会糊成一层灰雾。**改设计请改脚本再重跑，不要手改 PNG。**
 
 ## 迭代范围
 
