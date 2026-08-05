@@ -18,6 +18,12 @@ export function nowBeijingIso(): string {
   return toBeijingIso(Date.now());
 }
 
+/** 固定北京时区的 HH:MM:SS，供日志展示用。不能用 Date#toTimeString()——
+ * 它读运行时时区，同一份代码在开发机（北京时间）和 CI runner（UTC）上会算出不同结果。 */
+export function beijingTimeOfDay(ms: number): string {
+  return toBeijingIso(ms).slice(11, 19);
+}
+
 /** 采集日期，用于默认数据集路径。 */
 export function todayBeijing(): string {
   return nowBeijingIso().slice(0, 10);

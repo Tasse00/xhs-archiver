@@ -1,3 +1,4 @@
+import { beijingTimeOfDay } from '../core/time';
 import type { PageDiag } from '../page/read-note';
 import type { PanelState } from './usePanelState';
 
@@ -75,7 +76,7 @@ export function buildLogEntry(
 ): LogEntry {
   const detail = state.kind === 'unreadable' ? state.detail : undefined;
   return {
-    at: at.toTimeString().slice(0, 8),
+    at: beijingTimeOfDay(at.getTime()),
     outcome: describeOutcome(state),
     tabUrl: tabUrl.split('?')[0] ?? '',
     pathname: diag?.pathname ?? '—',
