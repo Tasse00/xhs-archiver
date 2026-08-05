@@ -41,6 +41,41 @@ export function PermissionSetup({
   );
 }
 
+/**
+ * 目录从磁盘上消失后的出口。这里跟 PermissionSetup 刚好相反：句柄没坏、
+ * 权限也在，坏的是目录本身，再点多少次「恢复授权」都没用，只能重新选。
+ *
+ * 先给「重新检查」是因为最常见的两种成因都是可逆的：目录被移走后又移回来、
+ * 外置盘/网盘还没挂上。这时不该逼人再走一遍目录选择器。
+ */
+export function MissingRootSetup({
+  rootName, onPick, onRecheck,
+}: {
+  rootName: string | null;
+  onPick(): void;
+  onRecheck(): void;
+}) {
+  return (
+    <div className="pt-body">
+      <Empty
+        icon={<IconFolder />}
+        title="找不到数据仓库目录"
+        alert
+        action={
+          <>
+            <button className="btn btn-auto btn-primary" onClick={onPick}>重新选择目录…</button>
+            <button className="btn btn-auto btn-sm" onClick={onRecheck}>重新检查</button>
+          </>
+        }
+      >
+        <b>{rootName ?? '数据仓库'}</b> 已经不在原来的位置了——被删除、改名、移动，
+        或者所在的磁盘没挂上，都会这样。若只是暂时读不到，放回原处后点「重新检查」；
+        否则请重新选择目录。<b>在此之前无法采集</b>，以免数据写进一个不存在的地方。
+      </Empty>
+    </div>
+  );
+}
+
 export function CollectorSetup({
   initial, onSave, onCancel,
 }: {

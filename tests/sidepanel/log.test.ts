@@ -91,6 +91,7 @@ describe('shouldLog', () => {
     const skipped: PanelState[] = [
       { kind: 'need_root' },
       { kind: 'need_permission' },
+      { kind: 'missing_root' },
       { kind: 'need_collector' },
       { kind: 'not_xhs' },
       { kind: 'not_note' },
@@ -120,6 +121,7 @@ describe('shouldLog', () => {
 describe('describeOutcome', () => {
   it('每个状态都有中文说法', () => {
     expect(describeOutcome({ kind: 'need_root' })).toBe('未选择仓库目录');
+    expect(describeOutcome({ kind: 'missing_root' })).toBe('仓库目录已不存在');
     // 中间态也要如实进日志，否则排查时看不出重试过几次
     expect(describeOutcome({ kind: 'reading' })).toBe('页面数据未就绪，稍后重读');
     expect(describeOutcome({ kind: 'video_rejected' })).toBe('视频笔记，不采集');

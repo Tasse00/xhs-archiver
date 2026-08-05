@@ -65,3 +65,30 @@ export async function ensurePermission(h: FileSystemDirectoryHandle): Promise<bo
 export function isPermissionError(e: unknown): boolean {
   return e instanceof DOMException && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
 }
+
+/** 目标条目已经不在磁盘上。与权限问题的恢复路径完全不同，必须分开认。 */
+export function isMissingError(e: unknown): boolean {
+  return e instanceof DOMException && e.name === 'NotFoundError';
+}
+
+/**
+ * 目录是否还在磁盘上。
+ *
+ * 使用者把仓库目录删掉（或移走、改名）时，句柄不会因此失效：它仍在 IndexedDB
+ * 里，queryPermission 仍是 granted，只有真正读写时才抛 NotFoundError。而
+ * store.ts 把 NotFoundError 一律解读成「没有这个条目」，于是「仓库没了」和
+ * 「仓库是空的」在读路径上完全同形——不显式探一次，面板会把一个不存在的仓库
+ * 显示成「这篇还没人采过」，一直到落盘那一刻才炸。
+ *
+ * 探法是取一个条目就停：目录还在时空目录只是取不到条目，目录没了才会抛。
+ * 前提是权限还在——没权限时这里抛的是 NotAllowedError，交给权限那条路处理。
+ */
+export async function rootExists(h: FileSystemDirectoryHandle): Promise<boolean> {
+  try {
+    await h.keys().next();
+    return true;
+  } catch (e) {
+    if (isMissingError(e)) return false;
+    throw e;
+  }
+}

@@ -73,3 +73,28 @@ export class MemDir {
 export function memRoot(): FileSystemDirectoryHandle {
   return new MemDir() as unknown as FileSystemDirectoryHandle;
 }
+
+/**
+ * 目录被使用者从磁盘上删掉（或移走、改名）之后的句柄。
+ *
+ * 这不是假想：句柄仍在 IndexedDB 里，权限也仍是 granted，FSA 不会因为目录
+ * 消失就让句柄失效——只在真正读写时抛 NotFoundError。
+ */
+export function deletedRoot(name = 'repo'): FileSystemDirectoryHandle {
+  const gone = (): never => {
+    throw new DOMException('not found', 'NotFoundError');
+  };
+  return {
+    kind: 'directory',
+    name,
+    getDirectoryHandle: async () => gone(),
+    getFileHandle: async () => gone(),
+    removeEntry: async () => gone(),
+    async *keys(): AsyncIterableIterator<string> {
+      gone();
+    },
+    async *entries(): AsyncIterableIterator<[string, { kind: 'file' | 'directory' }]> {
+      gone();
+    },
+  } as unknown as FileSystemDirectoryHandle;
+}

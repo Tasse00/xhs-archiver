@@ -30,6 +30,7 @@
 - **`noteDetailMap[id]` 是异步填充的**，点开 modal 瞬间可能不存在或只有半份字段。归一化必须校验 `noteId`/`time`/`user.userId`/`imageList`，缺就返回 `missing_data`。`time` 缺失时 `toBeijingIso` 抛 `RangeError: Invalid time value`，不校验就会一路冒泡到面板顶层。
 - **顶层 try/catch 不要把自身异常标成注入失败**。侧边栏自己的错误用 `panel_error`，否则提示会把人指向「重新加载扩展」这个错误方向。但 `NotAllowedError` 要在这之前单独挑出来，它是权限问题，见下条。
 - **FSA 权限会在扩展 origin 的最后一个标签页关闭时被回收**。实测路径：侧边栏 → 打开浏览页 → 关掉浏览页 → 回小红书采集，`getDirectoryHandle` 抛 `NotAllowedError`。侧边栏一直开着也救不了，它不算标签页。所以每个判定周期都要 `hasPermission()` 查一遍，别只在挂载时查；权限没了要进 `need_permission`（一键恢复），退回 `need_root` 就等于让人重选目录。
+- **目录被删掉时 FSA 句柄不会失效**。句柄仍在 IndexedDB 里，`queryPermission` 仍是 `granted`，只有真正读写才抛 `NotFoundError`。而 `store.ts` 把 `NotFoundError` 一律解读成「没有这个条目」，所以**「仓库没了」和「仓库是空的」在读路径上完全同形**。必须每个判定周期显式探一次（`rootExists`，取一个条目就停），进 `missing_root`——它跟 `need_permission` 相反，只能重选目录，恢复授权救不了。不探的后果：面板把不存在的仓库显示成「这篇还没人采过」，点采集才在 `writeFile` 里抛，逸出成未捕获的 rejection，进度条卡死。注意遍历类操作（`listEntries`/`listDir`）不吞 `NotFoundError`，会一路抛上来。
 - **`chrome.tabs.onUpdated` 必须过滤**。它在一次导航里触发好几次（`loading`、title、favicon、`complete`），而且**别的标签页更新也会触发**。不过滤就会并发跑起好几个判定周期：日志刷屏、注入白做好几遍。只认 `tab.active` 且 `info.url` 有值或 `info.status === 'complete'`。
 - **不能遍历 `noteDetailMap` 取首个非空 key**：里面有 `""` 和 `"undefined"` 脏 key，会拿到错误数据。必须用精确 id 索引。
 - **`desc` 里会重复一遍话题标签**（`#名字[话题]#`，可连写，截断时剩一个孤立 `#`）。落盘的 `content` 要剔掉，`tags` 取自 `tagList`。原文保留在 `raw.desc`。

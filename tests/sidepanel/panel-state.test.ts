@@ -37,6 +37,7 @@ function baseInput(over: Partial<ResolveInput> = {}): ResolveInput {
   return {
     hasRoot: true,
     hasPermission: true,
+    rootExists: true,
     store: createStore(memRoot()),
     collector: 'zach',
     hasDatasetPath: true,
@@ -76,6 +77,21 @@ describe('resolvePanelState 优先级', () => {
     // 目录还记着、只是权限被浏览器回收：不能退回 need_root，那等于让人重选目录
     const p = await resolvePanelState(baseInput({ hasPermission: false, collector: null }));
     expect(p.kind).toBe('need_permission');
+  });
+
+  // 目录被使用者删掉后，句柄和权限都还在，读操作只会一路返回空——
+  // 不显式判一下，面板会把「仓库没了」显示成「这篇还没人采过」。
+  it('目录已不存在时排在权限之后、采集者之前', async () => {
+    const s = await resolvePanelState(baseInput({ rootExists: false, collector: null }));
+    expect(s.kind).toBe('missing_root');
+    // 权限没了就探不了目录（探测本身会抛 NotAllowedError），权限优先
+    const p = await resolvePanelState(baseInput({ hasPermission: false, rootExists: false }));
+    expect(p.kind).toBe('need_permission');
+  });
+
+  it('目录还在但空着，不算目录不存在', async () => {
+    const s = await resolvePanelState(baseInput({ rootExists: true }));
+    expect(s.kind).toBe('ready');
   });
 
   it('未设采集者 ID 次之', async () => {

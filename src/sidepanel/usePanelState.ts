@@ -21,6 +21,11 @@ export type PanelState =
   | { kind: 'need_root' }
   /** 目录还记着，但权限被浏览器回收了。只差一次用户手势，不必重选目录。 */
   | { kind: 'need_permission' }
+  /**
+   * 句柄和权限都还在，但目录已经从磁盘上消失了（被删、被移走、外置盘拔了）。
+   * 与 need_permission 相反，这个只能重新选目录，恢复授权救不了。
+   */
+  | { kind: 'missing_root' }
   | { kind: 'need_collector' }
   /** 还没确认过写入路径。数据落在哪必须在采之前就说定。 */
   | { kind: 'need_path' }
@@ -48,6 +53,8 @@ export interface ResolveInput {
   hasRoot: boolean;
   /** 句柄当前是否还有 readwrite 权限。它会在采集途中被回收，见 handle-store。 */
   hasPermission: boolean;
+  /** 目录当前是否还在磁盘上。没权限时探不了，那种情况传什么都不影响判定。 */
+  rootExists: boolean;
   store: Store;
   collector: string | null;
   /** 使用者是否确认过写入路径。有默认值不等于确认过。 */
@@ -63,6 +70,9 @@ export async function resolvePanelState(input: ResolveInput): Promise<PanelState
   if (!input.hasRoot) return { kind: 'need_root' };
   // 没权限时下面每一步读盘都会抛 NotAllowedError，先拦住比让它炸在深处强。
   if (!input.hasPermission) return { kind: 'need_permission' };
+  // 排在权限之后：没权限时根本探不了目录。排在采集者之前：目录都没了，
+  // 再往下走每一步读盘都只会安静地返回空，最后把「仓库没了」显示成「可采集」。
+  if (!input.rootExists) return { kind: 'missing_root' };
   if (!input.collector) return { kind: 'need_collector' };
   if (!input.hasDatasetPath) return { kind: 'need_path' };
 

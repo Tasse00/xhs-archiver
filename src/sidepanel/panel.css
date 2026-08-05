@@ -170,6 +170,8 @@
 }
 .empty .why code { font-size: 11px; color: var(--ink-3); word-break: break-all; }
 .empty .btn { margin-top: 10px; }
+/* 空态里并排给两个动作时，次要动作贴着主动作，不要看着像两组按钮 */
+.empty .btn + .btn { margin-top: 2px; }
 .empty .field { width: 100%; margin-top: 12px; text-align: left; }
 .empty .hint { margin-top: 10px; }
 
