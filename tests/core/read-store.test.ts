@@ -47,7 +47,8 @@ describe('readFile', () => {
 
 describe('toReadStore', () => {
   it('只暴露四个读方法，写方法不可达', () => {
-    const ro = toReadStore(store) as Record<string, unknown>;
+    // 这个测试的意义就是探测 ReadStore 类型里没有的写方法，转换必须经 unknown。
+    const ro = toReadStore(store) as unknown as Record<string, unknown>;
     expect(Object.keys(ro).sort()).toEqual(['exists', 'listEntries', 'readFile', 'readText']);
     expect(ro.writeFile).toBeUndefined();
     expect(ro.removeDir).toBeUndefined();

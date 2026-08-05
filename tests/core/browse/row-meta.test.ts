@@ -66,8 +66,10 @@ describe('loadNote', () => {
     await store.writeFile(`${DS}/${A}/note.json`, noteJson());
     const r = await loadNote(store, ref);
     expect(r.ok && r.detail.ipLocation).toBe('上海');
-    expect(r.ok && (r.detail as Record<string, unknown>).raw).toBeUndefined();
-    expect(r.ok && (r.meta as Record<string, unknown>).raw).toBeUndefined();
+    // 断言的是「raw 这个键不该存在」，而 NoteDetail/RowMeta 类型里本就没有它，
+    // 所以必须先过 unknown 才能转成索引签名类型。
+    expect(r.ok && (r.detail as unknown as Record<string, unknown>).raw).toBeUndefined();
+    expect(r.ok && (r.meta as unknown as Record<string, unknown>).raw).toBeUndefined();
   });
 
   it('文件不存在时给出可读原因', async () => {
