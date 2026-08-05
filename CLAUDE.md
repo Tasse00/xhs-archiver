@@ -12,6 +12,8 @@
 - **写入路径要确认一次**（`need_path`，排在采集者 ID 之后），之后常驻底部只读展示；点「修改」进入独立设置页，保存时才持久化
 - **他人采过改为可接管**，写入路径默认改为固定的 `collected`（见下方决策表）
 
+**发布：** 手动在 GitHub Actions 上触发 `Release` workflow 并填版本号，产出挂在 Release 上的 zip（手动加载安装，不上架商店）。版本号唯一来源是 `package.json`，`manifest.config.ts` 从中读取——不要在 manifest 里硬编码版本号。细节见 `docs/superpowers/specs/2026-08-05-github-actions-release-design.md`。
+
 **下一步动作：** 继续按 `docs/superpowers/plans/2026-08-03-xhs-archiver-v1.md` 的 Task 13 走验收清单（24 项），修实测中暴露的问题；并补验上面两项。
 
 ## 阅读顺序
