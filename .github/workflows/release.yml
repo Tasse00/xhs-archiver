@@ -77,7 +77,11 @@ jobs:
             npm version "$VERSION" --no-git-tag-version
             git commit -am "chore: release v$VERSION"
           fi
-          git tag "v$VERSION"
+          # 必须是带注解的标签：git push --follow-tags 只推带注解的标签，
+          # 轻量标签（不带 -a）会被静默跳过——首次发布就在这里踩过坑：
+          # 版本号没变、没有新 commit 可推，--follow-tags 打出 "Everything
+          # up-to-date"，标签实际从未到达远端，gh release create 才报错。
+          git tag -a "v$VERSION" -m "v$VERSION"
 
       # 必须排在改版本号之后：manifest 的版本是从 package.json 读的
       - run: npm run build

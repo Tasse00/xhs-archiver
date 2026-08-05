@@ -124,10 +124,13 @@ if [ "$CURRENT" != "$VERSION" ]; then
   npm version "$VERSION" --no-git-tag-version
   git commit -am "chore: release v$VERSION"
 fi
-git tag "v$VERSION"
+# 必须是 -a（带注解），不能是轻量标签。
+git tag -a "v$VERSION" -m "v$VERSION"
 ```
 
 顺带的好处是 tag 名与 commit message 都由我们自己写死，不依赖 `npm version` 的默认格式。
+
+**`-a` 不能省**：第 8 步用的是 `git push --follow-tags`，它只推带注解的标签，轻量标签会被静默跳过。首个 Release 实测踩中过这个坑——版本号没变（本来就是 `0.1.0`），走的是上面 `if` 的 else 分支，没有新 commit 可推；`git tag "v$VERSION"`（轻量标签）配合 `--follow-tags` 直接打出 `Everything up-to-date`，标签从未到达远端，下一步 `gh release create` 才报错「tag exists locally but has not been pushed」。这不是首次发布特有的边界情况：只要某次发布凑巧没有可推的新 commit，就会复现。
 
 ### 6.3 为什么用 `gh` 而不是第三方 action
 
