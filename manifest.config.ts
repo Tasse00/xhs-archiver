@@ -1,9 +1,13 @@
 import { defineManifest } from '@crxjs/vite-plugin';
+import pkg from './package.json';
 
 export default defineManifest({
   manifest_version: 3,
   name: '小红书笔记归档',
-  version: '0.1.0',
+  // 版本号唯一来源是 package.json，发布流程只改那一处（见
+  // docs/superpowers/specs/2026-08-05-github-actions-release-design.md §4）。
+  // 不要在这里硬编码，否则 zip 文件名与扩展显示的版本会对不上。
+  version: pkg.version,
   permissions: ['sidePanel', 'scripting', 'storage', 'tabs'],
   host_permissions: [
     'https://*.xiaohongshu.com/*',
