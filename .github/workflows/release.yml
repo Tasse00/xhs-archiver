@@ -1,0 +1,108 @@
+name: Release
+
+# 只手动触发。版本号由人填，CI 不猜。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号，形如 0.2.0（不要带 v 前缀）'
+        required: true
+        type: string
+
+# 防止手滑连点两次并发跑出两个 tag。不取消进行中的那次 —— 它可能已经 push 了。
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write # 需要 push commit/tag 和创建 Release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 默认是深度 1 的浅克隆，从浅克隆往回 push 在某些情况下会被拒。
+          # 仓库很小，取全量省掉这一整类失败。
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # —— 以下四步都是质量门，任一失败都不会对仓库产生任何影响 ——
+
+      - name: 校验输入与前置条件
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::版本号必须是 x.y.z 形式，收到的是 '$VERSION'"
+            exit 1
+          fi
+          # 只允许从 main 发布，避免从功能分支发出一个内容不明的版本
+          if [ "$GITHUB_REF_NAME" != "main" ]; then
+            echo "::error::只能从 main 分支发布，当前是 $GITHUB_REF_NAME"
+            exit 1
+          fi
+          if git ls-remote --exit-code origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::error::tag v$VERSION 已存在。若是上次发布中途失败，见本文件底部的补救说明"
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - run: npm test
+
+      # vite build 不做类型检查，这一步不可省
+      - run: npx tsc --noEmit
+
+      # —— 以下是产物生成。仍未触碰远端 ——
+
+      - name: 改版本号并打 tag
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # npm version 在目标版本与当前相同时会报 Version not changed 退出，
+          # 而首个 Release 恰好是这种情况（仓库里已经是 0.1.0）。所以拆成两步：
+          # 版本号已经对的时候只打 tag。
+          CURRENT=$(node -p "require('./package.json').version")
+          if [ "$CURRENT" != "$VERSION" ]; then
+            npm version "$VERSION" --no-git-tag-version
+            git commit -am "chore: release v$VERSION"
+          fi
+          git tag "v$VERSION"
+
+      # 必须排在改版本号之后：manifest 的版本是从 package.json 读的
+      - run: npm run build
+
+      - run: npm run package
+
+      # —— 从这里开始不可逆 ——
+
+      - name: 推送 commit 与 tag
+        run: git push --follow-tags
+
+      - name: 创建 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          gh release create "v$VERSION" "xhs-archiver-$VERSION.zip" \
+            --title "v$VERSION" \
+            --notes '下载 zip 解压后，在 `chrome://extensions` 打开开发者模式，点「加载已解压的扩展程序」，选中解压出来的文件夹。详细步骤见包内的 `INSTALL.md`。'
+
+# —— 补救说明 ——
+# 「推送 commit 与 tag」成功、「创建 Release」失败时，tag 已经在远端，重跑会卡在
+# 第一步的 tag 存在性检查上。这时不要删 tag 重来，本地执行：
+#
+#   git fetch --tags && git checkout "v<version>"
+#   npm ci && npm run build && npm run package
+#   gh release create "v<version>" "xhs-archiver-<version>.zip" --title "v<version>"
