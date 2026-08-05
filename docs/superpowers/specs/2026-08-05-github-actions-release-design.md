@@ -70,7 +70,9 @@ export default defineManifest({
 
 打包逻辑放在 `scripts/package.mjs`，通过 `npm run package` 调用。**不写在 workflow 的 shell 步骤里。**
 
-理由：CI 上打包失败时，日志是唯一线索。做成脚本后本地能打出字节一致的 zip，排查不依赖 CI。
+理由：CI 上打包失败时，日志是唯一线索。做成脚本后本地能打出内容一致的 zip，排查不依赖 CI。（zip 会把文件 mtime 写进包里，所以做不到字节一致，也不需要。）
+
+脚本遵循 `scripts/gen-icons.mjs` 的既有形态：纯 `.mjs`、顶层直接执行、不写单元测试。验证方式是真的跑一遍再看 zip 内容。
 
 脚本职责（只做这些）：
 
@@ -103,17 +105,35 @@ export default defineManifest({
 | 2 | `npm ci` | 依赖问题 |
 | 3 | `npm test` | 测试没过，不该发 |
 | 4 | `npx tsc --noEmit` | 类型错误。`vite build` 不做类型检查，这一步不可省 |
-| 5 | `npm version <version>`（先配 git user 为 `github-actions[bot]`） | — |
+| 5 | 改版本号 + commit + tag（见 §6.2） | — |
 | 6 | `npm run build` | manifest 此时才拿到新版本号 |
 | 7 | `npm run package` | 产出 zip |
 | 8 | `git push --follow-tags` | **第一个不可逆动作** |
 | 9 | `gh release create v<version> <zip>` | 见 §6.3 |
 
-### 6.2 为什么用 `gh` 而不是第三方 action
+### 6.2 第 5 步不能直接用 `npm version <v>`
+
+`npm version` 在目标版本与当前版本相同时会报 `Version not changed` 并退出。而**首个 Release 恰好撞上这个情形**：仓库里已经是 `0.1.0`（见 §4），要发的也是 `v0.1.0`。
+
+所以拆成「改文件」与「打 tag」两件事，版本号已经对的时候只打 tag：
+
+```bash
+CURRENT=$(node -p "require('./package.json').version")
+if [ "$CURRENT" != "$VERSION" ]; then
+  # --no-git-tag-version：只改 package.json 与 package-lock.json，不代劳 commit/tag
+  npm version "$VERSION" --no-git-tag-version
+  git commit -am "chore: release v$VERSION"
+fi
+git tag "v$VERSION"
+```
+
+顺带的好处是 tag 名与 commit message 都由我们自己写死，不依赖 `npm version` 的默认格式。
+
+### 6.3 为什么用 `gh` 而不是第三方 action
 
 `gh` CLI 在 GitHub runner 上预装，认证靠 `GITHUB_TOKEN` 环境变量。用它就少一个供应链依赖——发布流水线持有仓库写权限，引入的第三方 action 越少越好。
 
-### 6.3 已知的非幂等窗口
+### 6.4 已知的非幂等窗口
 
 第 8 步成功、第 9 步失败时，tag 已经在远端，重跑会卡在第 1 步的 tag 存在性检查上。
 
@@ -125,26 +145,47 @@ gh release create v<version> xhs-archiver-<version>.zip --title "v<version>"
 
 这段说明写进 `release.yml` 的注释里，不要只留在文档中。
 
-### 6.4 分支保护
+### 6.5 分支保护
 
 main 目前没有保护规则。若将来加上，第 8 步的 push 会被拒绝，需要给 `GITHUB_TOKEN` 配 bypass，或改为通过 PR 发布。
 
-## 7. 需要用户参与的环节
+## 7. 前置修复：`tsc --noEmit` 当前不通过
+
+实测 `npx tsc --noEmit` 退出码 1，有 8 个错误。**不修的话第一次发布就会卡在质量门上**，所以这是流水线的前置工作，不是附带的顺手改动。
+
+两类：
+
+**（1）File System Access 的权限 API 缺类型声明（5 处）**
+
+`FileSystemDirectoryHandle.queryPermission` / `requestPermission` 与 `window.showDirectoryPicker` 都不在 TS 内置 lib 里，`@types/chrome` 也不提供。命中 `src/core/handle-store.ts`、`src/browser/components/PermissionGate.tsx`、`src/sidepanel/App.tsx`。
+
+修法是加一个 `src/fsa.d.ts` 环境声明，只补项目实际用到的这三个，不整套引入。
+
+**（2）测试文件里的类型断言过窄（3 处）**
+
+`tests/core/browse/row-meta.test.ts` 与 `tests/core/read-store.test.ts` 里 `as Record<string, unknown>` 被 TS 判为「两个类型重叠不足」。改成 `as unknown as Record<string, unknown>`，测试语义不变。
+
+## 8. 需要用户参与的环节
 
 - **创建 GitHub 仓库** —— 已完成，远端目前是空仓库（无任何分支）
 - **首次 push main** —— 尚未执行。流水线跑起来的前提
 - **触发发布** —— 在 GitHub 的 Actions 页面点 Run workflow 并填版本号。CI 不会自己决定何时发布
 
-## 8. 变更清单
+## 9. 变更清单
 
 新增：
 
 - `.github/workflows/release.yml`
 - `scripts/package.mjs`
+- `src/fsa.d.ts`
 - `INSTALL.md`
+- `tests/manifest-version.test.ts` —— 守住「manifest 版本号 === package.json 版本号」
 
 修改：
 
 - `package.json` —— `version` 改 `0.1.0`，新增 `package` 脚本
 - `manifest.config.ts` —— `version` 改为读 `pkg.version`
 - `tsconfig.json` —— 加 `resolveJsonModule`
+- `.gitignore` —— 加 `xhs-archiver-*.zip`
+- `tests/core/browse/row-meta.test.ts`、`tests/core/read-store.test.ts` —— 修类型断言
+- `README.md` —— 加「安装」段，指向 Releases
