@@ -9,6 +9,7 @@
   "scripts": {
     "icons": "node scripts/gen-icons.mjs",
     "build": "vite build",
+    "package": "node scripts/package.mjs",
     "dev": "vite",
     "test": "vitest run"
   },
