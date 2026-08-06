@@ -147,106 +147,151 @@ export type ShareOutcome =
 
 所以这不是「要不要加缩放」的问题，**底层布局本身是坏的**，两件事一起修。
 
-## 8. 布局改法
+## 8. 缩放交给 `react-zoom-pan-pinch`
+
+自己写这套交互，锚点数学只是最容易的部分；真正费时的是手势状态机——pointer capture、
+拖拽与 click 的竞争、触控板捏合（Chrome 转成带 `ctrlKey` 的 wheel）、缩放后的边界收敛、
+连续滚轮的节流。这些不是本项目的价值所在，用成熟库。
+
+选 **`react-zoom-pan-pinch@4`**。评估过的三个候选：
+
+| | 结论 |
+|---|---|
+| **react-zoom-pan-pinch 4.0.4** | **选它。** 零运行时依赖，peer 只有 `react: "*"`（React 19 无碍），2026-08 仍在更新 |
+| @panzoom/panzoom 4.6.2 | 零依赖、体积更小，但框架无关，ref 挂载／切图复位／百分比订阅这些 React 粘合层要自己写 |
+| photoswipe 5.4.4 | **2024-05 之后没有更新**，且它是整套 lightbox，会替掉现有组件和翻图逻辑，改动面远超需要 |
+
+代价要认下来：项目原本的运行时依赖只有 `react` / `react-dom`，非常干净，而这是个持有本地
+文件系统读写权限的扩展，多一个第三方包就多一份供应链信任面（尽管 lightbox 库本身碰不到
+FSA）。另外缩放逻辑进了库，就不再适用项目「核心层纯函数可测」那条约定，改为信任上游 ——
+所以**不再有 `src/core/browse/zoom.ts`**。
+
+`react-zoom-pan-pinch` 加进 `package.json` 的 `dependencies`。
+
+## 9. 四个必须知道的库实现细节
+
+这三条都是拆包看 `dist/` 源码确认的，不写下来实现时一定会踩。
+
+### 9.1 `TransformComponent` 的 wrapper 与 content 默认是 `fit-content`
+
+库注入的样式里：
+
+```css
+.transform-component-module_wrapper__… { position: relative; width: fit-content; height: fit-content; overflow: hidden; }
+.transform-component-module_content__…  { display: flex; width: fit-content; height: fit-content; transform-origin: 0% 0%; }
+```
+
+**两层都按内容自然尺寸收缩，不会填满父容器。** 直接用的话，img 的 `max-height: 100%`
+又没有了参照——跟 §7 那个 grid 循环是同一类毛病，等于换了个姿势重演。
+
+所以必须显式撑开，库提供了 `wrapperStyle` / `contentStyle` 两个 prop：
+
+```tsx
+<TransformComponent
+  wrapperStyle={{ width: '100%', height: '100%' }}
+  contentStyle={{ width: '100%', height: '100%' }}
+>
+  <img src={url} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+</TransformComponent>
+```
+
+这样 **fit 由 CSS 的 `object-fit: contain` 负责，缩放由库负责**，两者不打架。
+
+外层那个容器同时也要脱掉 §7 里坏掉的 grid：
 
 ```css
 .bw-lb-img { flex: 1 1 auto; min-height: 0; position: relative; overflow: hidden; }
 ```
 
-图片改 absolute 定位，用 transform 做居中、缩放与平移：
+`padding: 12px` 去掉——有了自由缩放，靠 padding 留白没有意义。
 
-```css
-.bw-lb-img img {
-  position: absolute; left: 50%; top: 50%;
-  transform-origin: center; will-change: transform;
-}
-```
+### 9.2 于是「scale = 1」意味着 fit，不是 1:1 原始像素
+
+这是上一条的直接后果，也是与初版设计最大的语义差别。库的 `scale` 是**相对 fit 后尺寸**
+的倍率。要在顶栏显示真实百分比，得自己换算：
 
 ```
-transform: translate(-50%, -50%) translate(Xpx, Ypx) scale(S)
+真实百分比 = scale × (图片渲染宽度 / naturalWidth) × 100
 ```
 
-这样容器高度完全由 flex 链决定，图片不再参与撑高，循环解析的问题从根上没有了。
-`padding: 12px` 去掉——有了自由缩放，靠 padding 留白没有意义，反而让 fit 倍率算起来
-要多减一层。
+**「必须用 `naturalWidth`」这条依然成立，只是用途变了**：不再用来算 fit 倍率（CSS 接管了），
+而是用来把库的 scale 换算成使用者能理解的百分比。仍然**不能用 `ImageRecord.width/height`**
+——同一个 Lightbox 被评论配图复用（`DetailPane` 的 `onOpenImages`），而项目已记着一条
+实测事实：评论图的声明尺寸是**展示尺寸**，284×367 的图实际是 556×717。
 
-## 9. 尺寸来源：必须用 `naturalWidth` / `naturalHeight`
+顶栏那行元数据文字继续显示 `ImageRecord` 里的声明值，它是**归档记录**，不是渲染依据，
+两者不要混。
 
-**不能用 `ImageRecord.width/height`。** 同一个 Lightbox 也被评论配图复用
-（`DetailPane` 的 `onOpenImages`），而项目里已经记着一条实测事实：评论图的声明尺寸是
-**展示尺寸**，284×367 的图实际是 556×717。拿元数据算 fit 倍率，评论图会整批算错。
+### 9.3 库对 content 里的 `img` 设了 `pointer-events: none`
 
-所以在 `<img onLoad>` 里读 `naturalWidth`/`naturalHeight` 存进 state，图片没加载完之前
-不渲染缩放层（显示「正在解码…」）。顶栏那行元数据文字仍然显示 `ImageRecord` 里的声明值，
-它是**归档记录**，不是渲染依据，两者不要混。
+拖拽由 wrapper 接管，img 不再是 pointer 事件的目标。但**外层 `.bw-lightbox` 的
+`onClick={onClose}` 仍然会收到冒泡**，所以 wrapper 那一层还是要 `stopPropagation`，
+否则拖完松手就把看图器关了。点背景关闭这个行为要保留。
 
-## 10. 缩放模型
+### 9.4 样式是 import 时运行时注入的
 
-状态三个数：`scale`、`tx`、`ty`（后两个是相对容器中心的像素偏移）。
+模块顶层调用 `styleInject()`，`document.createElement('style')` 塞进 `<head>`。MV3 的
+默认 CSP 是 `script-src 'self'; object-src 'self'`，不含 `style-src`，所以注入 `<style>`
+不受限制。**但这是验收时要第一个确认的东西**——浏览页打开看图器，图能正常缩放即说明
+样式注入成功了；若整块布局塌掉，先去 console 看有没有 CSP 报错。
 
-- **fit 倍率** = `min(cw / nw, ch / nh, 1)`。带 `1` 这个上限是因为「完整显示」对小图
-  就该是原始像素，把 200×200 的图铺满屏幕只会糊成一片。
-- **范围**：下限 `fit × 0.5`，上限 `8`。下限跟着 fit 走而不是取固定值，是因为超长图的
-  fit 本身就可能只有 0.15，固定下限会让它根本缩不小。
-- **滚轮**：以光标为锚点。设光标相对容器中心为 `(mx, my)`，倍率从 `s1` 变到 `s2`，则
-  `tx' = mx - (mx - tx) × s2 / s1`，`ty` 同理。不做锚点补偿的话，放大时目标会往外跑，
-  手感完全不对。
-- **拖拽**：`pointerdown/move/up` + `setPointerCapture`。
-- **双击**：在 fit 与 `1.0`（1:1 原始像素）之间切换，切到哪一档都把 `tx/ty` 归零。
-- **顶栏控件**：`⊖`、当前百分比、`⊕`、`⤢`（复位到 fit）。百分比是
-  `Math.round(scale × 100)`，1:1 时正好显示 100%。
-- **键盘**：现有的 `Esc` / `←` / `→` 保留，加 `+` `-` `0`（`0` = 复位）。
-- **切图或换笔记时复位到 fit**：`index` 一变就重置三个数，否则上一张放大到 400% 的
-  状态会套到下一张身上。
-- **容器尺寸变化**（拖动详情栏分隔条、改窗口大小）用 `ResizeObserver` 跟踪。处于 fit
-  状态时跟着重算 fit 倍率；已经手动缩放过就不动，使用者定的倍率不该被窗口变化改掉。
+## 10. 组件配置
 
-**平移不做边界约束。** 约束写不好就是「拖到边缘忽然拖不动」的粘滞手感，而这里有复位
-按钮、双击和 `0` 键三条退路，把图拖飞了随时能拉回来。
-
-## 11. 拖拽与关闭的冲突
-
-`.bw-lightbox` 最外层挂着 `onClick={onClose}`，图片区靠 `stopPropagation` 挡住。加了
-拖拽之后这条会出问题：**按住图片往外拖、在图片区之外松手，浏览器会把 click 派发到共同
-祖先**，也就是外层，于是看图器直接关掉。
-
-处理办法：拖拽过程中把「已经拖动过」记在 ref 上，在外层的 click 处理里消费掉一次并
-直接返回。用 ref 而不是 state——click 紧跟 pointerup 同帧到达，state 更新赶不上。
-
-单纯的 pointerdown/up 不算拖动（要有实际位移才算），否则点一下图片就再也关不掉了。
-
-## 12. 缩放数学抽成纯函数
-
-放到 `src/core/browse/zoom.ts`，不碰 DOM，按项目约定能在 Vitest 下跑：
-
-```ts
-export interface View { scale: number; tx: number; ty: number }
-
-/** 完整装进容器的倍率，不放大小图 */
-export function fitScale(container: Size, image: Size): number;
-
-/** 把倍率夹进 [fit × 0.5, 8] */
-export function clampScale(s: number, fit: number): number;
-
-/** 以容器内某点为锚点缩放，返回新的 View */
-export function zoomAt(view: View, point: Point, factor: number, fit: number): View;
+```tsx
+<TransformWrapper
+  minScale={1}          // 1 就是 fit，比 fit 还小没有意义
+  maxScale={8}
+  limitToBounds={true}  // 用库调好的边界收敛，不自己写
+  centerOnInit={true}
+  doubleClick={{ mode: 'toggle' }}
+  wheel={{ step: 0.2 }}
+>
 ```
 
-React 组件只管事件绑定与渲染。测试 `tests/core/browse/zoom.test.ts` 覆盖：宽图/长图/
-小图的 fit 倍率、上下限夹取、锚点补偿后锚点在屏幕上不动、fit 倍率变化时夹取跟着变。
+- `minScale={1}`：因为 scale=1 已经是「完整显示」，再往下缩只会让图变成屏幕中间一小块。
+  这跟初版设计的 `fit × 0.5` 下限不同，是 §9.2 语义变化带来的必然结果。
+- `limitToBounds` 用默认的 `true`。初版设计写的是「不做边界约束，靠复位按钮兜底」——那是
+  自己写时为了回避粘滞手感做的妥协；库的边界收敛是调过的，没有理由退回妥协方案。
+- `doubleClick.mode: 'toggle'` 正好是要的「fit ↔ 放大」双击切换，不用自己实现。
 
-## 13. 不做的事
+**切图时复位**：`index` 变化后调 `resetTransform()`（来自 `useControls()`），否则上一张
+放大到 400% 的状态会套到下一张身上。
 
-- **不引入缩放库**（panzoom 之类）。要的只是三个数和两个公式，一个依赖不值得。
-- **不做双指捏合手势**。浏览页跑在桌面上，触控板的捏合本来就会被浏览器转成带
-  `ctrlKey` 的 wheel 事件，走滚轮那条路即可。
+**顶栏控件**：`⊖`（`zoomOut`）· 百分比 · `⊕`（`zoomIn`）· `⤢`（`resetTransform`），
+四个 handler 全部来自 `useControls()`。百分比用 `useTransformComponent(s => s.scale)`
+订阅，按 §9.2 换算后显示。注意这些 hook 必须在 `TransformWrapper` **内部**的组件里调用，
+所以顶栏那一行要拆成一个子组件放进 wrapper 里，或者改用 `children` 的 render-prop 形式。
+
+**键盘**：现有的 `Esc` / `←` / `→` 保留在外层 `useEffect` 里不动。
+
+## 11. 不做的事
+
 - **不做缩略图条、旋转、下载**。都超出「看清这张图」这个目标。
+- **不用库自带的 `MiniMap`**。详情栏本来就窄，再挂一个缩略导航图只会挤掉看图空间。
+- **不自己实现捏合手势**。库的 `pinch` 配置已经覆盖，触控板捏合走 Chrome 转出的
+  `ctrlKey` wheel，同样由库处理。
+
+## 12. 测试
+
+缩放逻辑在库里，不为它写单测——那等于测上游。这块由验收清单覆盖：
+
+- 一张竖长图（比如 1080×1920）打开后**整张完整可见**，这是本次要修的主问题
+- 滚轮能放大、能拖拽、双击能切换、`⤢` 能复位
+- 左右翻图后倍率回到 fit
+- 评论配图（声明尺寸不准的那批）打开后同样完整可见，百分比数字合理
+
+`tests/browser/detail-pane.test.ts` 已有的用例要确认不被组件结构调整弄挂。
 
 ---
 
-## 14. 要同步改的文档
+## 13. 要同步改的文档
 
-- `CLAUDE.md`：决策表加两条（采集开关默认开、关掉不阻断归档也不影响旧数据；看图器平移
-  不做边界约束）；实测硬事实里补一条「看图器的尺寸只能取 `naturalWidth`，`ImageRecord`
-  的声明尺寸对评论图不准」。
+- `CLAUDE.md`：
+  - 决策表加两条：**采集开关默认开、关掉只是跳过该步，既不阻断归档也不影响仓库里的旧
+    数据**；**看图器的缩放交给 `react-zoom-pan-pinch`，不要自己实现手势**（附上
+    photoswipe 已停更、@panzoom 要自己写粘合层这两条否决理由）。
+  - 实测硬事实补两条：**`TransformComponent` 的 wrapper/content 默认 `fit-content`，
+    不覆盖成 `100%` 就会重演「图片撑爆容器」**；**看图器的尺寸只能取 `naturalWidth`，
+    `ImageRecord` 的声明尺寸对评论图不准**。
 - `README.md`：如有对侧边栏顶栏或设置项的描述，跟着改。
+- `package.json`：新增 `react-zoom-pan-pinch` 依赖。
