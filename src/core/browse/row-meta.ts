@@ -40,6 +40,8 @@ export async function loadNote(store: ReadStore, ref: NoteRef): Promise<LoadNote
       content: j.content ?? '',
       tags: j.tags ?? [],
       authorNickname: j.author?.nickname ?? '',
+      authorFans: typeof j.author?.fans === 'number' ? j.author.fans : null,
+      authorInteraction: typeof j.author?.interaction === 'number' ? j.author.interaction : null,
       liked: j.interact?.liked ?? 0,
       collected: j.interact?.collected ?? 0,
       comment: j.interact?.comment ?? 0,

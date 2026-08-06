@@ -20,7 +20,6 @@
 **不做（明确排除，不是遗漏）：**
 
 - **不做 push/PR 上的独立 CI。** 质量门只在发布时跑
-- **不自动生成 changelog。** Release 正文手写
 - **不做 prerelease / draft。** 每次发布都是正式版
 - **不上架 Chrome Web Store。** 分发方式就是「下载 zip、解压、加载已解压的扩展程序」
 - **不做自签 `.crx` + `update_url`。** Chrome 早已默认拒绝非商店 crx 安装，个人使用装不上
@@ -109,7 +108,7 @@ export default defineManifest({
 | 6 | `npm run build` | manifest 此时才拿到新版本号 |
 | 7 | `npm run package` | 产出 zip |
 | 8 | `git push --follow-tags` | **第一个不可逆动作** |
-| 9 | `gh release create v<version> <zip>` | 见 §6.3 |
+| 9 | 生成更新说明并 `gh release create v<version> <zip>` | 见 §6.3、§6.6 |
 
 ### 6.2 第 5 步不能直接用 `npm version <v>`
 
@@ -140,17 +139,39 @@ git tag -a "v$VERSION" -m "v$VERSION"
 
 第 8 步成功、第 9 步失败时，tag 已经在远端，重跑会卡在第 1 步的 tag 存在性检查上。
 
-补救是手动执行：
+补救是手动执行（`generate-notes` 那一步不能省，否则 Release 正文就只剩安装说明）：
 
 ```bash
-gh release create v<version> xhs-archiver-<version>.zip --title "v<version>"
+gh api --method POST "repos/<owner>/<repo>/releases/generate-notes" \
+  -f tag_name="v<version>" -q .body > notes.md
+gh release create v<version> xhs-archiver-<version>.zip \
+  --title "v<version>" --notes-file notes.md
 ```
 
 这段说明写进 `release.yml` 的注释里，不要只留在文档中。
 
 ### 6.5 分支保护
 
-main 目前没有保护规则。若将来加上，第 8 步的 push 会被拒绝，需要给 `GITHUB_TOKEN` 配 bypass，或改为通过 PR 发布。
+main 目前没有保护规则，但开发流程上已约定改动一律经 PR 进 main（见 §8）。**只有发布流水线的第 8 步是例外**：它把 `chore: release v<version>` 这个版本号 commit 直接推到 main。
+
+若将来给 main 加上「必须经 PR」的保护规则，这一步会被拒绝。届时的选项是：给 `GITHUB_TOKEN` 配 bypass，或让流水线开一个 PR 来推版本号 commit。后者会把「打 tag」与「合并」拆成两个不同步的时刻，`v<version>` 会指向一个还没进 main 的 commit——真要走这条路，得先重排 §6.1 的步骤顺序，不是加个 PR 就完事。
+
+### 6.6 更新说明由 PR 汇总生成
+
+Release 正文 = 一段固定的安装提示 + GitHub 生成的变更列表。
+
+变更列表来自 `POST /repos/{owner}/{repo}/releases/generate-notes`，它列出**上一个 tag 到本 tag 之间合并的每个 PR**，一行一个，内容就是 PR 标题加作者加 PR 链接。所以：
+
+**PR 标题是直接面向使用者的发布说明，不是给自己看的备忘。** 标题写砸了，Release 页上就是一行看不懂的字。格式约定在 `CLAUDE.md` 的「工作约定」里。
+
+几个实现上的决定：
+
+- **用 `gh api ... generate-notes` 而不是 `gh release create --generate-notes`。** 后者只能把生成的列表接在 `--notes` 后面，而安装提示得排在最前面——装不上的人最需要先看到它。显式取回正文就能自己定拼接顺序。
+- **这一步必须排在 tag 推送之后。** `generate-notes` 要求 `tag_name` 已经在远端存在。
+- **不加 `.github/release.yml` 做分组。** GitHub 的分类只认 label，而这是单人仓库，为了分组去逐个 PR 打 label 不划算。PR 标题的 `feat:` / `fix:` 前缀本身已经起到了分类作用。
+- **不引入 changelog 生成类的第三方 action。** 理由同 §6.3。
+
+代价是第 9 步多了一次 API 调用，多一个失败点，且落在 §6.4 那个不可逆窗口里。补救命令已相应更新。
 
 ## 7. 前置修复：`tsc --noEmit` 当前不通过
 
@@ -168,13 +189,23 @@ main 目前没有保护规则。若将来加上，第 8 步的 push 会被拒绝
 
 `tests/core/browse/row-meta.test.ts` 与 `tests/core/read-store.test.ts` 里 `as Record<string, unknown>` 被 TS 判为「两个类型重叠不足」。改成 `as unknown as Record<string, unknown>`，测试语义不变。
 
-## 8. 需要用户参与的环节
+## 8. 开发流程：改动经 PR 进 main
 
-- **创建 GitHub 仓库** —— 已完成，远端目前是空仓库（无任何分支）
-- **首次 push main** —— 尚未执行。流水线跑起来的前提
+**所有代码改动都通过 PR 合并进 main，不直接往 main push。** 唯一例外是发布流水线自己推的版本号 commit（见 §6.5）。
+
+这条约定不是为了走流程，而是因为 §6.6 把 PR 标题变成了发布说明的正文——不开 PR 的改动，在 Release 页上就是不存在的改动。
+
+**合并方式不作限制**（squash / merge commit / rebase 都行）。`generate-notes` 认的是「这个区间里合并过哪些 PR」，三种方式 GitHub 都能关联回 PR，变更列表不受影响。强制某一种只是给自己添麻烦。
+
+**PR 标题格式与正文结构的完整约定写在 `CLAUDE.md` 的「工作约定」段**，不在这里重复——那是每个 session 都会读到的文件，写在这里等于没写。
+
+## 9. 需要用户参与的环节
+
+- **创建 GitHub 仓库、首次 push main** —— 已完成
+- **首个 Release** —— 已完成，远端有 `v0.1.0`
 - **触发发布** —— 在 GitHub 的 Actions 页面点 Run workflow 并填版本号。CI 不会自己决定何时发布
 
-## 9. 变更清单
+## 10. 变更清单
 
 新增：
 

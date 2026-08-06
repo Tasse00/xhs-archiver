@@ -8,13 +8,16 @@ import { chromeLocalArea, loadSettings, saveSettings, defaultDatasetPath, isVali
 import { ensureRepoTemplates } from '../core/repo-template';
 import { archive } from '../core/archiver';
 import { readNoteViaTab, type PageDiag } from '../page/read-note';
+import { readAuthorViaTab } from '../page/read-author';
+import { extractAuthorCard } from '../core/author';
+import { nowBeijingIso } from '../core/time';
 import type { ExtractedComments, ExtractedNote, Pointer } from '../types';
 import { isTransient, resolvePanelState, type PanelState } from './usePanelState';
 import { buildLogEntry, recordLog, shouldLog, type LogEntry } from './log';
 import {
   RootSetup, PermissionSetup, MissingRootSetup, CollectorSetup, PathSetup,
 } from './components/Setup';
-import { NoteView, type ArchiveOutcome } from './components/NoteView';
+import { NoteView, type ArchiveOutcome, type AuthorOutcome } from './components/NoteView';
 import { LogView } from './components/LogView';
 import { IconRefresh, IconBrowse } from './components/Icons';
 import { openBrowser } from './open-browser';
@@ -84,6 +87,7 @@ export function App() {
   // 「刚刚采完」与「以前采过」在 mine 状态下长得一样，必须显式区分，
   // 否则用户点完按钮看到的是一段历史记录，无法确认本次是否成功。
   const [justArchived, setJustArchived] = useState<ArchiveOutcome | null>(null);
+  const [authorReading, setAuthorReading] = useState(false);
   const [log, setLog] = useState<LogEntry[]>([]);
   // 顶栏点「采集者」进来的改设置界面。null 表示没在改。
   const [editingCollector, setEditingCollector] = useState(false);
@@ -319,13 +323,44 @@ export function App() {
       setMessage('写入路径不合法：每一段只能是小写字母、数字、连字符、下划线。');
       return;
     }
+
+    // 作者卡片：让页面自己去请求，我们只接住结果。约 1.5–3 秒，期间卡片会在
+    // 页面上闪现后自动收起。采不到不阻断归档——附属数据不该把主干拖下水。
+    setAuthorReading(true);
+    // 初值就是失败态：读作者的任何一条岔路都不该让后面的 archive 拿到未赋值的变量。
+    let author: AuthorOutcome = { ok: false, reason: 'inject_failed' };
+    const noteToWrite = { ...plan.note };
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id !== undefined) {
+        const read = await readAuthorViaTab(tab.id, plan.note.author.user_id);
+        if (read.ok) {
+          const card = extractAuthorCard(read.raw, nowBeijingIso());
+          if (card) {
+            noteToWrite.author = { ...plan.note.author, ...card };
+            author = { ok: true, fans: card.fans, interaction: card.interaction, approximate: card.approximate };
+          } else {
+            // 卡片回来了但三个计数一个都没有，等同于没采到。
+            author = { ok: false, reason: 'timeout' };
+          }
+        } else {
+          author = { ok: false, reason: read.reason };
+        }
+      }
+    } catch (e) {
+      // 读作者是附属步骤，它自己出错绝不能把整篇采集带下水。
+      author = { ok: false, reason: 'page_error' };
+    } finally {
+      setAuthorReading(false);
+    }
+
     setMessage(null);
     setProgress({ done: 0, total: plan.note.images.length });
     let res;
     try {
       res = await archive({
         store,
-        note: plan.note,
+        note: noteToWrite,
         comments: plan.comments,
         collector,
         datasetPath,
@@ -358,6 +393,7 @@ export function App() {
       imageCount: plan.note.images.length,
       comments: plan.comments,
       commentImageFailures: res.commentImageFailures,
+      author,
     });
   }
 
@@ -433,6 +469,7 @@ export function App() {
           progress={progress}
           message={message}
           justArchived={justArchived}
+          authorReading={authorReading}
         />
       )}
 

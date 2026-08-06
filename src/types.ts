@@ -1,3 +1,44 @@
+/**
+ * hover_card 接口的响应体里的 data。
+ * 注意：它**没有 userId**，身份只能从请求 URL 的 target_user_id 取。
+ * DOM 兜底路径读不到认证类型，那时 verify_info 整个缺席。
+ */
+export interface RawAuthorCard {
+  basic_info?: { nickname?: string; images?: string; desc?: string };
+  verify_info?: { red_official_verify_type?: number };
+  interact_info?: { follows?: string; fans?: string; interaction?: string };
+  [k: string]: unknown;
+}
+
+/** 任何地方都有的作者身份四件套。评论作者只有这些。 */
+export interface AuthorBase {
+  user_id: string;
+  nickname: string;
+  avatar_url: string;
+  profile_url: string;
+}
+
+/**
+ * 悬浮卡片带来的字段。没采到时这一整组都不写——card_fetched_at 在不在
+ * 就是「有没有采到作者信息」的判据，绝不用 fans: 0 这种假值占位。
+ */
+export interface AuthorCardFields {
+  desc: string;
+  /** DOM 兜底路径读不到认证类型，此时字段缺席。写 0 会让「未认证」与「不知道」无法区分。 */
+  verify_type?: number;
+  follows: number;
+  fans: number;
+  interaction: number;
+  /** 原始字符串。大号返回「10万+」时 parseCount 给出的不是真值，得留一份原文。 */
+  counts_raw: { follows: string; fans: string; interaction: string };
+  /** counts_raw 里出现 + 万 千 亿 时为真，提醒读数据的人别拿去算。 */
+  approximate: boolean;
+  card_fetched_at: string;
+}
+
+/** note.json 里的 author：身份四件套 + 可选的卡片字段。 */
+export type ArchivedAuthor = AuthorBase & Partial<AuthorCardFields>;
+
 export interface RawImage {
   fileId: string;
   width: number;
@@ -82,7 +123,7 @@ export interface ExtractedComment {
   publishedAt: string;
   ipLocation: string;
   likedCount: number;
-  author: ExtractedNote['author'];
+  author: AuthorBase;
   atUsers: { user_id: string; nickname: string }[];
   tags: string[];
   images: ExtractedCommentImage[];
@@ -122,7 +163,7 @@ export interface ExtractedNote {
   publishedAt: string;
   /** 作者最后一次编辑的时间；从未编辑过时与 publishedAt 相差不到一秒。 */
   lastEditedAt: string;
-  author: { user_id: string; nickname: string; avatar_url: string; profile_url: string };
+  author: ArchivedAuthor;
   interact: { liked: number; collected: number; comment: number; share: number };
   images: ExtractedImage[];
   raw: RawNote;
@@ -193,7 +234,7 @@ export interface CommentRecord {
   published_at: string;
   ip_location: string;
   liked_count: number;
-  author: ExtractedNote['author'];
+  author: AuthorBase;
   at_users: { user_id: string; nickname: string }[];
   tags: string[];
   images: CommentImageRecord[];

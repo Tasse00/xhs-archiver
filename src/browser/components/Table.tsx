@@ -13,6 +13,11 @@ function num(n: number): string {
   return n.toLocaleString('zh-CN');
 }
 
+/** 没采到作者信息时显示破折号。写 0 会让人以为这个号真的零粉丝。 */
+function numOrDash(n: number | null): string {
+  return n === null ? '—' : n.toLocaleString('zh-CN');
+}
+
 function Cover({ url }: { url: string | undefined }) {
   return <span className="bw-cover">{url ? <img src={url} alt="" /> : null}</span>;
 }
@@ -78,6 +83,8 @@ export function Table({
         <span className="c-cover" />
         {th('title', '标题', 'c-title')}
         {th('authorNickname', '作者', 'c-author')}
+        {th('authorFans', '粉丝', 'c-fans')}
+        {th('authorInteraction', '获赞藏', 'c-fans')}
         {th('liked', '赞', 'c-num')}
         {th('collected', '藏', 'c-num')}
         {th('comment', '评', 'c-num')}
@@ -121,6 +128,8 @@ export function Table({
                 <Cover url={m.coverFile ? thumbUrl(ref, m.coverFile, THUMB) : undefined} />
                 <span className="c-title" title={m.title}>{m.title || '（无标题）'}</span>
                 <span className="c-author" title={m.authorNickname}>{m.authorNickname}</span>
+                <span className="c-fans">{numOrDash(m.authorFans)}</span>
+                <span className="c-fans">{numOrDash(m.authorInteraction)}</span>
                 <span className="c-num">{num(m.liked)}</span>
                 <span className="c-num">{num(m.collected)}</span>
                 <span className="c-num">{num(m.comment)}</span>

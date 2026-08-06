@@ -4,7 +4,7 @@ import { checkQuality, type QualityReport } from '../../core/browse/quality';
 import type { NoteDetail, NoteRef, RowMeta } from '../../core/browse/types';
 import { noteKeyOf } from '../../core/browse/scope';
 import type { ReadStore } from '../../core/read-store';
-import type { CommentRecord } from '../../types';
+import type { ArchivedAuthor, CommentRecord } from '../../types';
 import type { ThumbSize } from '../hooks/useThumbnail';
 import { Lightbox, type LightboxImage } from './Lightbox';
 
@@ -112,6 +112,39 @@ export function CommentCard({
   );
 }
 
+function cardTime(iso: string): string {
+  return iso.length >= 16 ? iso.slice(0, 16).replace('T', ' ') : iso;
+}
+
+/**
+ * 作者信息块。卡片字段整组可能缺席（老数据，或采集时没读到），
+ * 那时只显示昵称——显示 0 粉丝会被当成事实。
+ */
+export function AuthorBlock({ author, noteUrl }: { author: ArchivedAuthor; noteUrl: string }) {
+  const hasCard = author.card_fetched_at !== undefined;
+  const n = (v: number | undefined) => (v ?? 0).toLocaleString('zh-CN');
+  const approx = author.approximate === true ? '约 ' : '';
+
+  return (
+    <section className="bw-author">
+      <p className="bw-author-line">
+        <span className="bw-author-name">{author.nickname}</span>
+        <a href={author.profile_url} target="_blank" rel="noreferrer" className="bw-link">作者主页 ↗</a>
+        <a href={noteUrl} target="_blank" rel="noreferrer" className="bw-link">小红书原文 ↗</a>
+      </p>
+      {hasCard && author.desc && <p className="bw-author-desc">{author.desc}</p>}
+      {hasCard && (
+        <p className="bw-dim">
+          {approx}{n(author.follows)} 关注 · {approx}{n(author.fans)} 粉丝 · {approx}{n(author.interaction)} 获赞与收藏
+        </p>
+      )}
+      {hasCard && (
+        <p className="bw-dim">作者信息采于 {cardTime(author.card_fetched_at!)}</p>
+      )}
+    </section>
+  );
+}
+
 export function DetailPane({
   store, noteRef, meta, detail, onClose, thumbUrl,
 }: {
@@ -170,7 +203,7 @@ export function DetailPane({
         <p className="bw-content">{meta.content}</p>
         {meta.tags.length > 0 && <p className="bw-dim">{meta.tags.map((t) => `#${t}`).join(' ')}</p>}
 
-        <p>👤 {detail.author.nickname}</p>
+        <AuthorBlock author={detail.author} noteUrl={detail.url} />
         <p>❤ {meta.liked} &nbsp; ⭐ {meta.collected} &nbsp; 💬 {meta.comment} &nbsp; ↗ {meta.share}</p>
         <p className="bw-dim">
           发布 {meta.publishedAt.slice(0, 16).replace('T', ' ')}

@@ -28,7 +28,7 @@ export function compareByDefault(a: NoteRef, b: NoteRef): number {
 }
 
 export type SortKey =
-  | 'title' | 'authorNickname'
+  | 'title' | 'authorNickname' | 'authorFans' | 'authorInteraction'
   | 'liked' | 'collected' | 'comment' | 'share'
   | 'imageCount' | 'archiveCount'
   | 'publishedAt' | 'lastEditedAt' | 'firstArchivedAt' | 'lastArchivedAt'
@@ -38,6 +38,12 @@ export type SortKey =
 export function compareByMeta(key: SortKey, a: RowMeta, b: RowMeta): number {
   const x = a[key];
   const y = b[key];
+  // 没采到作者信息的沉到末尾，升序降序都一样。把 null 当 0 会让它们混进
+  // 真实的零粉丝账号里，「不知道」和「是 0」必须区分开。
+  if (x === null || y === null) {
+    if (x === null && y === null) return a.noteId < b.noteId ? -1 : a.noteId > b.noteId ? 1 : 0;
+    return x === null ? 1 : -1;
+  }
   let r = 0;
   if (typeof x === 'number' && typeof y === 'number') r = x - y;
   else r = String(x).localeCompare(String(y));
