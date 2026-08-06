@@ -12,6 +12,7 @@
 - **写入路径要确认一次**（`need_path`，排在采集者 ID 之后），之后常驻底部只读展示；点「修改」进入独立设置页，保存时才持久化
 - **他人采过改为可接管**，写入路径默认改为固定的 `collected`（见下方决策表）
 - **随笔记采集作者悬浮卡片信息**（简介、关注、粉丝、获赞与收藏），并进 `note.json` 的 `author`；浏览页表格增加粉丝、获赞收藏两列并可排序，详情栏展示完整作者信息与原文链接。设计见 `docs/superpowers/specs/2026-08-06-author-card-design.md`
+- **随笔记采集分享链接**（分享面板 →「复制链接」的产出），进 `note.json` 的 `share_url`；浏览页详情栏的原文链接改用它。设计见 `docs/superpowers/specs/2026-08-06-share-link-design.md`
 
 **发布：** 手动在 GitHub Actions 上触发 `Release` workflow 并填版本号，产出挂在 Release 上的 zip（手动加载安装，不上架商店）。版本号唯一来源是 `package.json`，`manifest.config.ts` 从中读取——不要在 manifest 里硬编码版本号。细节见 `docs/superpowers/specs/2026-08-05-github-actions-release-design.md`。
 
@@ -68,6 +69,17 @@
 - **不要走作者主页 SSR**。`user/profile/{id}` 的 HTML 里有同样的数据且不需要签名，但有会话级频控降级：一分钟内请求几次，数字就从 `384` 变成 `10+`，且**真实导航过去看到的也是 `10+`**，等于污染使用者自己的浏览体验。
 - **计数可能是「10万+」「1千+」**，`parseCount` 给出的不是真值，所以要留 `counts_raw` 与 `approximate`。
 
+分享链接（同样是登录页实测）：
+
+- **不带 `xsec_token` 的 `/explore/{id}` 已经 404**（`error_code=300031 当前笔记暂时无法浏览`）。所以 `note.json` 里的 `url` 字段点不开，回访原帖必须靠带 token 的分享链接。这条推翻了原先「回访靠 `note_id` + 作者主页链接」的说法。
+- **「复制链接」写进剪贴板的是一整段口令文案**，不是纯 URL：`61 【标题 - 作者 | 小红书…】 😆 <URL>`。开头的数字是分享码，来自面板首次打开时发的 `POST /api/sns/web/share/code`（要签名），同一篇再开面板不再请求。
+- **分享按钮是 `.buttons.engage-bar-style .share-wrapper svg`**。只写 `.engage-bar .share-wrapper` 会命中 modal 背后信息流卡片上的分享图标——页面上存在两套 `engage-bar`。
+- **只能对 svg 一层派发 click**。对 `.share-wrapper` / `.share-icon-container` / `svg` 三层都派发会连续 toggle 三次，净结果是面板关着，现象看起来像「合成事件对这个组件无效」。这条踩过，别再试一遍。
+- **分享面板不需要 hover 祖先链**，与作者卡片相反，一次 click 就够。
+- **点完「复制链接」面板不会自动关**，必须再点一次 svg 才收起。
+- **`xsec_token` 每次签发都不同**：同一篇从首页 feed 进和从作者主页进拿到的不是同一个值（都是 46 字符）。但跨来源可用——feed 签发的 token 放进 `xsec_source=pc_share` 的分享链接里照常打开。
+- **本地拼分享 URL 是可行的但被否决**：除 token 外三个参数都是常量（`source=webshare`、`xhsshare=pc_web`、`xsec_source=pc_share`），token 就是 `raw.xsecToken`，拼出来实测能打开。不这么做是因为 `share/code` 是服务端接口，绕过它等于对平台语义做未经验证的假设。
+
 ## 已定的决策，不要重开讨论
 
 这些都是权衡过的结果，理由写在设计文档里。如果要改，先读理由：
@@ -79,7 +91,7 @@
 | 他人采过可**接管**（更新/迁移，动作与自己采过完全相同） | 不要改成"另存一份"。接管必须删掉对方的指针（`supersede`），且删在写自己那条之后 |
 | 默认写入路径固定为 `collected`，不自动拼日期、不按采集者分目录 | 日期可作为手动设置的二级路径，例如 `collected/2026-08-04`。归属记在指针文件名与 `note.json` 里，不要把采集者 ID 放回路径 |
 | `partial` 状态**不写指针** | 这是「指针存在 ⟹ 数据完整」不变量的基础，别为了方便破坏它 |
-| 不存 `xsec_token` | 它会过期。想回访原帖靠 `note_id` + 作者主页链接 |
+| 顶层 `url` 不带 `xsec_token`，带 token 的地址单独放 `share_url` | 不要把 token 拼进 `url`——它是笔记的稳定身份。也不要因此以为仓库里没有 token：`raw` 里一直有 |
 | 评论只采页面**已加载**的那部分 | 不要为了采全去滚页面、点展开、或构造签名请求。理由见设计文档 13.1 |
 | 评论不留 `raw`（与 note 相反） | 里面的 `xsecToken` 会过期、`liked` 与采集者绑定，只会污染 diff |
 | 评论配图失败**不**影响归档状态 | 不要把它算进 `partial`——那会因为一张配图丢掉整篇的指针 |
@@ -89,6 +101,10 @@
 | 作者字段并入 `note.json` 的 `author` | 不要为它单开 `author.json` |
 | 没采到就一个卡片字段都不写；DOM 兜底时省略 `verify_type` | 不要写 `fans: 0`、`verify_type: 0` 占位 |
 | 作者信息采不到不阻断归档 | 不要把它算进 `partial` |
+| 分享链接靠合成事件让页面自己走完流程 | 不要本地拼 URL——拼得出来，但那是对平台语义的未验证假设 |
+| 剪贴板拦截而不真写 | 不要让一次采集覆盖使用者当前的剪贴板内容 |
+| 分享面板由谁开由谁关 | 使用者自己点开的面板不要动；不要「一律关掉」 |
+| 分享链接采不到不阻断归档 | 不要把它算进 `partial`，也不要写空串占位 |
 
 ## 工作约定
 
