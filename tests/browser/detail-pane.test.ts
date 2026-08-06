@@ -74,6 +74,7 @@ describe('AuthorBlock', () => {
         approximate: false, card_fetched_at: '2026-08-06T14:32:10+08:00',
       },
       noteUrl: 'https://www.xiaohongshu.com/explore/n1',
+      shareUrl: '',
     }));
     expect(html).toContain('学术废物');
     expect(html).toContain('82');
@@ -83,7 +84,7 @@ describe('AuthorBlock', () => {
   // 老数据没有卡片字段，不能显示 0
   it('没有卡片字段时只显示昵称，不显示 0', () => {
     const html = renderToStaticMarkup(createElement(AuthorBlock, {
-      author: base, noteUrl: 'https://www.xiaohongshu.com/explore/n1',
+      author: base, noteUrl: 'https://www.xiaohongshu.com/explore/n1', shareUrl: '',
     }));
     expect(html).toContain('小红');
     expect(html).not.toContain('粉丝');
@@ -91,11 +92,34 @@ describe('AuthorBlock', () => {
 
   it('原文与主页都是新标签页打开的链接', () => {
     const html = renderToStaticMarkup(createElement(AuthorBlock, {
-      author: base, noteUrl: 'https://www.xiaohongshu.com/explore/n1',
+      author: base, noteUrl: 'https://www.xiaohongshu.com/explore/n1', shareUrl: '',
     }));
     expect(html).toContain('href="https://www.xiaohongshu.com/explore/n1"');
     expect(html).toContain('href="https://www.xiaohongshu.com/user/profile/u1"');
     expect(html).toContain('target="_blank"');
     expect(html).toContain('rel="noreferrer"');
+  });
+
+  // 不带 xsec_token 的 /explore/{id} 实测已经 404，有分享链接就该用它
+  it('有分享链接时原文指向分享链接', () => {
+    const share = 'https://www.xiaohongshu.com/discovery/item/n1?source=webshare&xsec_token=T';
+    const html = renderToStaticMarkup(createElement(AuthorBlock, {
+      author: base,
+      noteUrl: 'https://www.xiaohongshu.com/explore/n1',
+      shareUrl: share,
+    }));
+    // renderToStaticMarkup 会把属性值里的 & 转义成 &amp;，字面比较要跟着转义
+    expect(html).toContain(`href="${share.replace(/&/g, '&amp;')}"`);
+    expect(html).not.toContain('href="https://www.xiaohongshu.com/explore/n1"');
+  });
+
+  // 老数据没有 share_url，回退到旧地址总比没有链接强
+  it('没有分享链接时回退到 url', () => {
+    const html = renderToStaticMarkup(createElement(AuthorBlock, {
+      author: base,
+      noteUrl: 'https://www.xiaohongshu.com/explore/n1',
+      shareUrl: '',
+    }));
+    expect(html).toContain('href="https://www.xiaohongshu.com/explore/n1"');
   });
 });

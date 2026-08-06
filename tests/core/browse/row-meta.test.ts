@@ -135,4 +135,20 @@ describe('loadNote', () => {
     expect(x.ok && x.meta.title).toBe('这份在 08-03');
     expect(y.ok && y.meta.title).toBe('这份在 07-29');
   });
+
+  it('把 share_url 读进 NoteDetail', async () => {
+    const link = `https://www.xiaohongshu.com/discovery/item/${A}?source=webshare&xsec_token=T`;
+    await store.writeFile(`${DS}/${A}/note.json`, noteJson({ share_url: link }));
+    const r = await loadNote(store, ref);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.detail.shareUrl).toBe(link);
+  });
+
+  // 老数据没有这个字段，不能变成 undefined 传到 React 里
+  it('老 note.json 没有 share_url 时给空串', async () => {
+    await store.writeFile(`${DS}/${A}/note.json`, noteJson());
+    const r = await loadNote(store, ref);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.detail.shareUrl).toBe('');
+  });
 });

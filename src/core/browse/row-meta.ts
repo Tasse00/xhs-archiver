@@ -57,6 +57,7 @@ export async function loadNote(store: ReadStore, ref: NoteRef): Promise<LoadNote
     },
     detail: {
       url: j.url ?? '',
+      shareUrl: j.share_url ?? '',
       author: j.author,
       ipLocation: typeof raw?.ipLocation === 'string' ? raw.ipLocation : '',
       images: j.images,
