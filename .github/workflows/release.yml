@@ -99,9 +99,22 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
+          # 更新说明由 GitHub 按「上一个 tag 到本 tag 之间合并的 PR」汇总，
+          # 每条就是一个 PR 标题。所以 PR 标题即发布说明的正文行，约定见 CLAUDE.md。
+          # 这一步必须排在 tag 推送之后：generate-notes 要求 tag 已在远端。
+          #
+          # 不用 gh release create --generate-notes：那样安装说明只能落在变更列表
+          # 后面，而装不上的人最需要先看到它。这里显式取回正文，自己决定拼接顺序。
+          gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f tag_name="v$VERSION" -q .body > "$RUNNER_TEMP/generated.md"
+          {
+            echo '下载 zip 解压后，在 `chrome://extensions` 打开开发者模式，点「加载已解压的扩展程序」，选中解压出来的文件夹。详细步骤见包内的 `INSTALL.md`。'
+            echo
+            cat "$RUNNER_TEMP/generated.md"
+          } > "$RUNNER_TEMP/notes.md"
           gh release create "v$VERSION" "xhs-archiver-$VERSION.zip" \
             --title "v$VERSION" \
-            --notes '下载 zip 解压后，在 `chrome://extensions` 打开开发者模式，点「加载已解压的扩展程序」，选中解压出来的文件夹。详细步骤见包内的 `INSTALL.md`。'
+            --notes-file "$RUNNER_TEMP/notes.md"
 
 # —— 补救说明 ——
 # 「推送 commit 与 tag」成功、「创建 Release」失败时，tag 已经在远端，重跑会卡在
@@ -109,4 +122,7 @@ jobs:
 #
 #   git fetch --tags && git checkout "v<version>"
 #   npm ci && npm run build && npm run package
-#   gh release create "v<version>" "xhs-archiver-<version>.zip" --title "v<version>"
+#   gh api --method POST "repos/<owner>/<repo>/releases/generate-notes" \
+#     -f tag_name="v<version>" -q .body > notes.md
+#   gh release create "v<version>" "xhs-archiver-<version>.zip" \
+#     --title "v<version>" --notes-file notes.md
