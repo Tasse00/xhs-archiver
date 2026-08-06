@@ -12,18 +12,24 @@ import {
   IconCheck, IconCross, IconDoc, IconGlobe, IconLoading, IconPlug, IconVideo,
 } from './Icons';
 
-/** 作者卡片这一步的结果。采不到不阻断归档，但要如实说。 */
+/**
+ * 作者卡片这一步的结果。三态：采到、被使用者关掉、采失败。
+ * 「关掉」不能塞进 AuthorReadFailure——那个枚举描述的是页面交互怎么失败的，
+ * 而关掉根本没发生过交互，混进去会让文案表退化成什么都往里塞的字典。
+ */
 export type AuthorOutcome =
-  | { ok: true; fans: number; interaction: number; approximate: boolean }
-  | { ok: false; reason: AuthorReadFailure };
+  | { kind: 'ok'; fans: number; interaction: number; approximate: boolean }
+  | { kind: 'skipped' }
+  | { kind: 'fail'; reason: AuthorReadFailure };
 
 /**
  * 分享链接这一步的结果。失败原因跨两层：页面层没点开面板是一回事，
  * 解析层发现链接指向别的笔记是另一回事，两者的排查方向完全不同。
  */
 export type ShareOutcome =
-  | { ok: true; url: string }
-  | { ok: false; reason: ShareReadFailure | ShareUrlFailure };
+  | { kind: 'ok'; url: string }
+  | { kind: 'skipped' }
+  | { kind: 'fail'; reason: ShareReadFailure | ShareUrlFailure };
 
 /** 本次会话刚完成的一次采集，仅在结果仍对应当前笔记时存在。 */
 export interface ArchiveOutcome {
@@ -161,22 +167,28 @@ export function Result({ outcome }: { outcome: ArchiveOutcome }) {
         </dd>
         <dt>作者</dt>
         <dd>
-          {outcome.author.ok ? (
+          {outcome.author.kind === 'ok' ? (
             <>
               {outcome.author.approximate && '约 '}
               {outcome.author.fans.toLocaleString('zh-CN')} 粉丝 ·{' '}
               {outcome.author.approximate && '约 '}
               {outcome.author.interaction.toLocaleString('zh-CN')} 获赞与收藏
             </>
+          ) : outcome.author.kind === 'skipped' ? (
+            <span className="hint">已在设置中关闭</span>
           ) : (
             <>作者信息未采到：{AUTHOR_FAIL[outcome.author.reason]}。重采这篇可以再试。</>
           )}
         </dd>
         <dt>分享链接</dt>
         <dd>
-          {outcome.share.ok
-            ? '已记录'
-            : `分享链接未采到：${SHARE_FAIL[outcome.share.reason]}。重采这篇可以再试。`}
+          {outcome.share.kind === 'ok' ? (
+            '已记录'
+          ) : outcome.share.kind === 'skipped' ? (
+            <span className="hint">已在设置中关闭</span>
+          ) : (
+            <>分享链接未采到：{SHARE_FAIL[outcome.share.reason]}。重采这篇可以再试。</>
+          )}
         </dd>
       </dl>
     </div>

@@ -13,6 +13,11 @@
 - **他人采过改为可接管**，写入路径默认改为固定的 `collected`（见下方决策表）
 - **随笔记采集作者悬浮卡片信息**（简介、关注、粉丝、获赞与收藏），并进 `note.json` 的 `author`；浏览页表格增加粉丝、获赞收藏两列并可排序，详情栏展示完整作者信息与原文链接。设计见 `docs/superpowers/specs/2026-08-06-author-card-design.md`
 - **随笔记采集分享链接**（分享面板 →「复制链接」的产出），进 `note.json` 的 `share_url`；浏览页详情栏的原文链接改用它。设计见 `docs/superpowers/specs/2026-08-06-share-link-design.md`
+- **作者信息与分享链接的采集可以关掉**：顶栏齿轮 →「采集设置」，两个开关默认都开。
+  关掉只是跳过该步，不阻断归档、不影响仓库里已采过的笔记。设计见
+  `docs/superpowers/specs/2026-08-06-capture-toggles-and-lightbox-design.md`
+- **浏览页看图器可缩放**：默认完整显示整张图，滚轮缩放、拖拽平移、双击切换、⤢ 复位。
+  缩放交给 `react-zoom-pan-pinch`
 
 **发布：** 手动在 GitHub Actions 上触发 `Release` workflow 并填版本号，产出挂在 Release 上的 zip（手动加载安装，不上架商店）。版本号唯一来源是 `package.json`，`manifest.config.ts` 从中读取——不要在 manifest 里硬编码版本号。Release 的更新说明由 GitHub 按「上一个 tag 以来合并的 PR」自动汇总，**每个 PR 标题就是发布说明里的一行**，所以标题怎么写有硬性约定，见下方「工作约定」。细节见 `docs/superpowers/specs/2026-08-05-github-actions-release-design.md`。
 
@@ -80,6 +85,19 @@
 - **`xsec_token` 每次签发都不同**：同一篇从首页 feed 进和从作者主页进拿到的不是同一个值（都是 46 字符）。但跨来源可用——feed 签发的 token 放进 `xsec_source=pc_share` 的分享链接里照常打开。
 - **本地拼分享 URL 是可行的但被否决**：除 token 外三个参数都是常量（`source=webshare`、`xhsshare=pc_web`、`xsec_source=pc_share`），token 就是 `raw.xsecToken`，拼出来实测能打开。不这么做是因为 `share/code` 是服务端接口，绕过它等于对平台语义做未经验证的假设。
 
+看图器相关：
+
+- **`react-zoom-pan-pinch` 的 `TransformComponent` 默认 `width/height: fit-content`**，
+  wrapper 和 content 两层都按内容收缩、不填满父容器。必须用 `wrapperStyle`/`contentStyle`
+  覆盖成 `100%`，否则 img 的 `max-height` 失去参照，竖长图照样撑爆容器——这正是本次要修的 bug。
+- **看图器的尺寸只能取 `naturalWidth`/`naturalHeight`**，不能用 `ImageRecord.width/height`。
+  同一个看图器也被评论配图复用，而评论图记的是展示尺寸。
+- **`TransformWrapper` 只返回 `Context.Provider`，不渲染 DOM**，夹在 flex 布局中间是安全的。
+- **`react-zoom-pan-pinch@4.0.4` 的 `styleInject` 用 `typeof document === 'undefined'` 守卫**，
+  node 环境下 import 会静默跳过而不崩溃——不需要给传递性 import 到它的测试文件加
+  `// @vitest-environment jsdom`。这条推翻了实现前的预判（曾以为会在模块顶层无条件调用
+  `document.createElement`），加了反而是无意义的减速。
+
 ## 已定的决策，不要重开讨论
 
 这些都是权衡过的结果，理由写在设计文档里。如果要改，先读理由：
@@ -105,6 +123,8 @@
 | 剪贴板拦截而不真写 | 不要让一次采集覆盖使用者当前的剪贴板内容 |
 | 分享面板由谁开由谁关 | 使用者自己点开的面板不要动；不要「一律关掉」 |
 | 分享链接采不到不阻断归档 | 不要把它算进 `partial`，也不要写空串占位 |
+| 采集开关默认开，关掉只跳过该步 | 不要把「关掉了」塞进 `AuthorReadFailure`/`ShareReadFailure`——那两个枚举描述的是页面交互怎么失败的，而关掉根本没发生过交互。也不要因为关掉就少写 `note.json` 里 `AuthorBase` 那部分身份字段 |
+| 看图器的缩放交给 `react-zoom-pan-pinch` | 不要自己写手势——锚点数学不难，难的是 pointer capture、拖拽与 click 的竞争、捏合、边界收敛。也不要换 photoswipe（2024-05 后停更，且是整套 lightbox）或 @panzoom/panzoom（框架无关，React 粘合层仍要自己写） |
 
 ## 工作约定
 
