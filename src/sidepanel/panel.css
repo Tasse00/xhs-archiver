@@ -226,3 +226,15 @@
 .log-e dd { margin: 0; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
 .log-e .flag { color: var(--warn); }
 .log-e .err { color: var(--accent); }
+
+/* ── 采集开关 ─────────────────────────────────────────── */
+.switch {
+  width: 100%; margin-top: 10px; display: flex; gap: 9px; align-items: flex-start;
+  text-align: left; padding: 9px 10px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--surface); cursor: pointer;
+}
+.switch:hover { border-color: var(--line-2); }
+.switch input { flex: none; margin-top: 2px; accent-color: var(--ink); }
+.switch-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.switch-text b { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.switch-text i { font-style: normal; font-size: 11px; color: var(--ink-3); line-height: 1.5; }

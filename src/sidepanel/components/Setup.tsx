@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { isValidDatasetPath, isValidSegment, randomCollectorId } from '../../core/settings';
 import { Empty } from './Empty';
-import { IconFolder, IconId, IconPath } from './Icons';
+import { IconFolder, IconGear, IconId, IconPath } from './Icons';
 
 export function RootSetup({ onPick }: { onPick(): void }) {
   return (
@@ -153,6 +153,69 @@ export function PathSetup({
           {editing ? '保存修改' : '使用这个路径'}
         </button>
         {onCancel && <button className="btn btn-sm" onClick={onCancel}>取消</button>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 采集开关。作者卡片与分享链接这两步都靠合成事件驱动页面自己走流程，
+ * 对小红书的 DOM 结构有强依赖——平台改一次前端就可能让这两步各自空转到
+ * 超时。这一页是那时候的逃生口，不必等插件发新版。
+ *
+ * 这里刻意没有「保存」按钮：同目录的 CollectorSetup / PathSetup 有输入校验、
+ * 存在「填了一半不合法」的中间态，所以需要提交语义；布尔开关没有这回事，
+ * 多一步保存只是让使用者多点一次。
+ */
+export function CaptureSetup({
+  captureAuthor, captureShare, onChange, onBack,
+}: {
+  captureAuthor: boolean;
+  captureShare: boolean;
+  onChange(next: { captureAuthor: boolean; captureShare: boolean }): void;
+  onBack(): void;
+}) {
+  return (
+    <div className="pt-body">
+      <div className="empty">
+        <IconGear />
+        <h2>采集设置</h2>
+        <p>
+          这两步都要驱动小红书页面自己走一遍流程。哪一步被平台改坏了，
+          在这里关掉就能让采集立刻恢复顺畅，不用等插件更新。
+        </p>
+
+        <label className="switch">
+          <input
+            type="checkbox"
+            checked={captureAuthor}
+            onChange={(e) => onChange({ captureAuthor: e.target.checked, captureShare })}
+          />
+          <span className="switch-text">
+            <b>采集作者信息</b>
+            <i>简介、关注、粉丝、获赞与收藏。关掉后不再让作者卡片在页面上闪现。</i>
+          </span>
+        </label>
+
+        <label className="switch">
+          <input
+            type="checkbox"
+            checked={captureShare}
+            onChange={(e) => onChange({ captureAuthor, captureShare: e.target.checked })}
+          />
+          <span className="switch-text">
+            <b>采集分享链接</b>
+            <i>能点开原帖的那个地址。关掉后不再弹分享面板，note.json 里不写 share_url。</i>
+          </span>
+        </label>
+
+        <p className="hint">
+          关掉只是跳过这一步，采集会更快，笔记正文、配图、评论照常。
+          <b>已经采过的笔记不受影响</b>，仓库里的旧数据不会被改动。
+          正常情况下两个都保持开启。
+        </p>
+
+        <button className="btn btn-sm" onClick={onBack}>返回</button>
       </div>
     </div>
   );
