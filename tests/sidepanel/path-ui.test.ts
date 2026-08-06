@@ -132,7 +132,7 @@ describe('NoteView', () => {
       progress: { done: 1, total: 3 },
       message: null,
       justArchived: null,
-      authorReading: false,
+      pageStep: null,
     }));
 
     expect(html).toContain('· 修改');
