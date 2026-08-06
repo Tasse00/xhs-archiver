@@ -157,6 +157,11 @@ export interface ExtractedImage {
 export interface ExtractedNote {
   noteId: string;
   url: string;
+  /**
+   * 分享面板「复制链接」产出的地址。带 xsec_token，会过期，每次签发都不同。
+   * extractor 拿不到页面，所以由 sidepanel 在采集时补上；采不到就不设这个字段。
+   */
+  shareUrl?: string;
   title: string;
   content: string;
   tags: string[];
@@ -196,6 +201,8 @@ export interface NoteRecord {
   schema_version: 1;
   note_id: string;
   url: string;
+  /** 见 ExtractedNote.shareUrl。采不到时整个字段缺席，不写空串。 */
+  share_url?: string;
   type: 'normal';
   title: string;
   content: string;

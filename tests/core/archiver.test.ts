@@ -132,6 +132,27 @@ describe('archive - 新采集', () => {
     });
     expect(seen).toEqual([1]);
   });
+
+  it('把 shareUrl 写进 note.json 的 share_url', async () => {
+    const link = `https://www.xiaohongshu.com/discovery/item/${NOTE_ID}?source=webshare&xsec_token=T`;
+    await archive({
+      store, note: { ...goodNote(), shareUrl: link }, collector: 'zach',
+      datasetPath: 'zach/2026-08-03', mode: 'new', deps: okDeps(),
+    });
+    const j = JSON.parse((await store.readText(`zach/2026-08-03/${NOTE_ID}/note.json`))!);
+    expect(j.share_url).toBe(link);
+  });
+
+  // 采不到分享链接不阻断归档，也不留占位
+  it('没有 shareUrl 时 note.json 里没有 share_url，归档照常完成', async () => {
+    const res = await archive({
+      store, note: goodNote(), collector: 'zach',
+      datasetPath: 'zach/2026-08-03', mode: 'new', deps: okDeps(),
+    });
+    expect(res.status).toBe('complete');
+    const j = JSON.parse((await store.readText(`zach/2026-08-03/${NOTE_ID}/note.json`))!);
+    expect('share_url' in j).toBe(false);
+  });
 });
 
 describe('archive - 评论', () => {
