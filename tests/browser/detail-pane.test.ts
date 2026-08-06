@@ -1,8 +1,8 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { CommentCard } from '../../src/browser/components/DetailPane';
-import type { CommentRecord } from '../../src/types';
+import { AuthorBlock, CommentCard } from '../../src/browser/components/DetailPane';
+import type { ArchivedAuthor, CommentRecord } from '../../src/types';
 
 const comment: CommentRecord = {
   id: 'main',
@@ -57,5 +57,45 @@ describe('CommentCard', () => {
     expect(html).toContain('bw-comment-image');
     expect(html).toContain('回复正文');
     expect(html).toContain('已收录 1 / 3 条回复');
+  });
+});
+
+const base: ArchivedAuthor = {
+  user_id: 'u1', nickname: '小红', avatar_url: '',
+  profile_url: 'https://www.xiaohongshu.com/user/profile/u1',
+};
+
+describe('AuthorBlock', () => {
+  it('有卡片字段时显示简介与三个计数', () => {
+    const html = renderToStaticMarkup(createElement(AuthorBlock, {
+      author: {
+        ...base, desc: '学术废物', follows: 6, fans: 82, interaction: 6046,
+        counts_raw: { follows: '6', fans: '82', interaction: '6046' },
+        approximate: false, card_fetched_at: '2026-08-06T14:32:10+08:00',
+      },
+      noteUrl: 'https://www.xiaohongshu.com/explore/n1',
+    }));
+    expect(html).toContain('学术废物');
+    expect(html).toContain('82');
+    expect(html).toContain('6,046');
+  });
+
+  // 老数据没有卡片字段，不能显示 0
+  it('没有卡片字段时只显示昵称，不显示 0', () => {
+    const html = renderToStaticMarkup(createElement(AuthorBlock, {
+      author: base, noteUrl: 'https://www.xiaohongshu.com/explore/n1',
+    }));
+    expect(html).toContain('小红');
+    expect(html).not.toContain('粉丝');
+  });
+
+  it('原文与主页都是新标签页打开的链接', () => {
+    const html = renderToStaticMarkup(createElement(AuthorBlock, {
+      author: base, noteUrl: 'https://www.xiaohongshu.com/explore/n1',
+    }));
+    expect(html).toContain('href="https://www.xiaohongshu.com/explore/n1"');
+    expect(html).toContain('href="https://www.xiaohongshu.com/user/profile/u1"');
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noreferrer"');
   });
 });
