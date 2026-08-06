@@ -9,11 +9,8 @@
   flex: none; display: flex; align-items: center; gap: 8px;
   padding: 10px 12px; border-bottom: 1px solid var(--line);
 }
-.pt-brand {
-  display: flex; align-items: center; gap: 7px; margin-right: auto;
-  font-size: 13px; font-weight: 600;
-}
-.pt-brand .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--accent); flex: none; }
+/* 即使没有 chip 也占位，右侧图标靠它撑到最右 */
+.pt-chips { display: flex; align-items: center; gap: 8px; margin-right: auto; min-width: 0; }
 
 .chip {
   display: inline-flex; align-items: baseline; gap: 5px; max-width: 128px;

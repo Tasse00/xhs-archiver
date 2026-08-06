@@ -440,19 +440,23 @@ export function App() {
   return (
     <div className="panel">
       <header className="pt-top">
-        <div className="pt-brand"><span className="dot" />笔记归档</div>
-        {configured && (
-          <>
-            <button className="chip" title="更换数据仓库目录" onClick={() => void pickRoot()}>
-              <span className="k">仓库</span>
-              <span className="v">{rootName}</span>
-            </button>
-            <button className="chip" title="更改采集者 ID" onClick={() => setEditingCollector(true)}>
-              <span className="k">采集者</span>
-              <span className="v">{collector}</span>
-            </button>
-          </>
-        )}
+        {/* 这个容器即使没有 chip 也要渲染：撑开右侧图标靠的是它身上的
+            margin-right:auto，跟着 configured 一起消失的话，首次配置阶段
+            三个图标会整体塌到左边。 */}
+        <div className="pt-chips">
+          {configured && (
+            <>
+              <button className="chip" title="更换数据仓库目录" onClick={() => void pickRoot()}>
+                <span className="k">仓库</span>
+                <span className="v">{rootName}</span>
+              </button>
+              <button className="chip" title="更改采集者 ID" onClick={() => setEditingCollector(true)}>
+                <span className="k">采集者</span>
+                <span className="v">{collector}</span>
+              </button>
+            </>
+          )}
+        </div>
         {configured && (
           <button className="icon-btn" title="浏览数据集" onClick={() => void openBrowser()}>
             <IconBrowse />
