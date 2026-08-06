@@ -8,6 +8,10 @@ const RESERVED_TOP = '_index';
 export interface Settings {
   collector: string | null;
   datasetPath: string | null;
+  /** 关掉就跳过作者悬浮卡片那一步。平台改版把它弄坏时的逃生口。 */
+  captureAuthor: boolean;
+  /** 关掉就跳过分享面板那一步。 */
+  captureShare: boolean;
 }
 
 export interface SettingsArea {
@@ -41,13 +45,17 @@ export function defaultDatasetPath(): string {
   return 'collected';
 }
 
-const KEYS = ['collector', 'datasetPath'];
+const KEYS = ['collector', 'datasetPath', 'captureAuthor', 'captureShare'];
 
 export async function loadSettings(area: SettingsArea): Promise<Settings> {
   const raw = await area.get(KEYS);
   return {
     collector: typeof raw.collector === 'string' ? raw.collector : null,
     datasetPath: typeof raw.datasetPath === 'string' ? raw.datasetPath : null,
+    // 老用户的 storage 里没有这两个 key。默认成 false 等于在他们不知情时
+    // 关掉本来就有的能力，所以缺失一律当成开着。
+    captureAuthor: typeof raw.captureAuthor === 'boolean' ? raw.captureAuthor : true,
+    captureShare: typeof raw.captureShare === 'boolean' ? raw.captureShare : true,
   };
 }
 
@@ -58,7 +66,12 @@ export async function saveSettings(area: SettingsArea, s: Settings): Promise<voi
   if (s.datasetPath !== null && !isValidDatasetPath(s.datasetPath)) {
     throw new Error('数据集路径每一段只能包含小写字母、数字、连字符和下划线，且不能以 _index 开头');
   }
-  await area.set({ collector: s.collector, datasetPath: s.datasetPath });
+  await area.set({
+    collector: s.collector,
+    datasetPath: s.datasetPath,
+    captureAuthor: s.captureAuthor,
+    captureShare: s.captureShare,
+  });
 }
 
 /** 生产环境的存储区实现。 */
