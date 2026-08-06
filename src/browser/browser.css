@@ -87,6 +87,8 @@ body { font-size: 13px; background: var(--paper); }
 .c-title { flex: 2 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
 .c-author { flex: none; width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .c-num { flex: none; width: 52px; text-align: right; }
+/* 粉丝与获赞收藏可能到七位数，比 .c-num 宽一档 */
+.c-fans { flex: none; width: 62px; text-align: right; }
 .c-time { flex: none; width: 88px; }
 .c-path { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-3); }
 
