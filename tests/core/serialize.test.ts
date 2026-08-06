@@ -2,6 +2,31 @@ import { describe, it, expect } from 'vitest';
 import { serializeComments, serializeNote, serializePointer, sortKeysDeep } from '../../src/core/serialize';
 import type { CommentsFile, NoteRecord, Pointer } from '../../src/types';
 
+function makeNote(): NoteRecord {
+  return {
+    schema_version: 1,
+    note_id: 'n1',
+    url: 'https://www.xiaohongshu.com/explore/n1',
+    type: 'normal',
+    title: '标题',
+    content: '正文',
+    tags: [],
+    published_at: '2026-08-01T10:00:00+08:00',
+    last_edited_at: '2026-08-01T10:00:00+08:00',
+    author: { user_id: 'u1', nickname: '小红', avatar_url: '', profile_url: 'https://p/u1' },
+    interact: { liked: 1, collected: 2, comment: 3, share: 4 },
+    images: [],
+    archive: {
+      first_archived_at: '2026-08-06T10:00:00+08:00',
+      last_archived_at: '2026-08-06T10:00:00+08:00',
+      collector: 'zach',
+      archive_count: 1,
+      status: 'complete',
+    },
+    raw: { noteId: 'n1', type: 'normal', time: 0, user: { userId: 'u1', nickname: '小红', avatar: '' }, interactInfo: {}, imageList: [] },
+  };
+}
+
 const base: NoteRecord = {
   schema_version: 1,
   note_id: 'abc',
@@ -52,6 +77,56 @@ describe('serializeNote', () => {
 
   it('相同输入两次输出完全一致', () => {
     expect(serializeNote(base)).toBe(serializeNote(base));
+  });
+
+  // 卡片字段按固定顺序排在身份四件套之后，与 note.json 其余部分一样不靠对象字面量顺序
+  it('author 有卡片字段时按固定顺序写出', () => {
+    const rec = makeNote();
+    rec.author = {
+      user_id: 'u1',
+      nickname: '小红',
+      avatar_url: 'https://a/x',
+      profile_url: 'https://www.xiaohongshu.com/user/profile/u1',
+      desc: '简介',
+      verify_type: 0,
+      follows: 21,
+      fans: 384,
+      interaction: 1500,
+      counts_raw: { follows: '21', fans: '384', interaction: '1500' },
+      approximate: false,
+      card_fetched_at: '2026-08-06T14:32:10+08:00',
+    };
+    const j = JSON.parse(serializeNote(rec)) as { author: Record<string, unknown> };
+    expect(Object.keys(j.author)).toEqual([
+      'user_id', 'nickname', 'avatar_url', 'profile_url',
+      'desc', 'verify_type', 'follows', 'fans', 'interaction',
+      'counts_raw', 'approximate', 'card_fetched_at',
+    ]);
+    expect(j.author.counts_raw).toEqual({ follows: '21', fans: '384', interaction: '1500' });
+  });
+
+  // card_fetched_at 在不在，就是「有没有采到作者信息」的判据
+  it('没采到作者卡片时一个新字段都不写', () => {
+    const rec = makeNote();
+    rec.author = {
+      user_id: 'u1', nickname: '小红', avatar_url: '', profile_url: 'https://p/u1',
+    };
+    const j = JSON.parse(serializeNote(rec)) as { author: Record<string, unknown> };
+    expect(Object.keys(j.author)).toEqual(['user_id', 'nickname', 'avatar_url', 'profile_url']);
+  });
+
+  // DOM 兜底路径读不到认证类型，那一个字段单独缺席，其余照写
+  it('只有 verify_type 缺席时其余卡片字段照写', () => {
+    const rec = makeNote();
+    rec.author = {
+      user_id: 'u1', nickname: '小红', avatar_url: '', profile_url: 'https://p/u1',
+      desc: '', follows: 0, fans: 82, interaction: 6046,
+      counts_raw: { follows: '0', fans: '82', interaction: '6046' },
+      approximate: false, card_fetched_at: '2026-08-06T14:32:10+08:00',
+    };
+    const j = JSON.parse(serializeNote(rec)) as { author: Record<string, unknown> };
+    expect(Object.keys(j.author)).not.toContain('verify_type');
+    expect(j.author.fans).toBe(82);
   });
 });
 

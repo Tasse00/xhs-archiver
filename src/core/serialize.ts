@@ -1,4 +1,4 @@
-import type { CommentImageRecord, CommentRecord, CommentsFile, NoteRecord, Pointer } from '../types';
+import type { ArchivedAuthor, CommentImageRecord, CommentRecord, CommentsFile, NoteRecord, Pointer } from '../types';
 
 /**
  * 递归按 key 排序。实测 note 的字段顺序在不同入口（独立页 / 首页 modal /
@@ -19,6 +19,35 @@ function stringify(v: unknown): string {
   return `${JSON.stringify(v, null, 2)}\n`;
 }
 
+/**
+ * 卡片字段整组可缺席：card_fetched_at 在不在就是「有没有采到作者信息」的判据，
+ * 缺的时候一个都不写，绝不用 fans: 0 占位。verify_type 还能单独缺席——
+ * DOM 兜底路径读不到认证类型，写 0 会让「未认证」与「不知道」无法区分。
+ */
+function authorOf(a: ArchivedAuthor): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    user_id: a.user_id,
+    nickname: a.nickname,
+    avatar_url: a.avatar_url,
+    profile_url: a.profile_url,
+  };
+  if (a.card_fetched_at === undefined) return out;
+
+  out.desc = a.desc ?? '';
+  if (a.verify_type !== undefined) out.verify_type = a.verify_type;
+  out.follows = a.follows ?? 0;
+  out.fans = a.fans ?? 0;
+  out.interaction = a.interaction ?? 0;
+  out.counts_raw = {
+    follows: a.counts_raw?.follows ?? '',
+    fans: a.counts_raw?.fans ?? '',
+    interaction: a.counts_raw?.interaction ?? '',
+  };
+  out.approximate = a.approximate ?? false;
+  out.card_fetched_at = a.card_fetched_at;
+  return out;
+}
+
 export function serializeNote(n: NoteRecord): string {
   return stringify({
     schema_version: n.schema_version,
@@ -30,12 +59,7 @@ export function serializeNote(n: NoteRecord): string {
     tags: n.tags,
     published_at: n.published_at,
     last_edited_at: n.last_edited_at,
-    author: {
-      user_id: n.author.user_id,
-      nickname: n.author.nickname,
-      avatar_url: n.author.avatar_url,
-      profile_url: n.author.profile_url,
-    },
+    author: authorOf(n.author),
     interact: {
       liked: n.interact.liked,
       collected: n.interact.collected,
