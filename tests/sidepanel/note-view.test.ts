@@ -8,10 +8,13 @@ const comments: ExtractedComments = {
   declaredTotal: 10, collectedCount: 10, complete: true, hasMore: false, list: [],
 };
 
-function outcome(author: ArchiveOutcome['author']): ArchiveOutcome {
+function outcome(
+  author: ArchiveOutcome['author'],
+  share: ArchiveOutcome['share'] = { ok: true, url: 'https://www.xiaohongshu.com/discovery/item/n1?xsec_token=T' },
+): ArchiveOutcome {
   return {
     mode: 'new', status: 'complete', path: 'collected/n1', failures: [],
-    imageCount: 3, comments, commentImageFailures: [], author,
+    imageCount: 3, comments, commentImageFailures: [], author, share,
   };
 }
 
@@ -41,5 +44,42 @@ describe('Result 里的作者信息', () => {
     expect(html).toContain('采集完成');
     expect(html).toContain('作者信息未采到');
     expect(html).toContain('重采这篇可以再试');
+  });
+});
+
+describe('Result 里的分享链接', () => {
+  it('采到时说明已记录', () => {
+    const html = renderToStaticMarkup(createElement(Result, {
+      outcome: outcome(
+        { ok: true, fans: 1, interaction: 1, approximate: false },
+        { ok: true, url: 'https://www.xiaohongshu.com/discovery/item/n1?xsec_token=T' },
+      ),
+    }));
+    expect(html).toContain('分享链接');
+    expect(html).toContain('已记录');
+  });
+
+  // 采不到不阻断归档，但必须如实说
+  it('没采到时说明原因，并且不影响「采集完成」', () => {
+    const html = renderToStaticMarkup(createElement(Result, {
+      outcome: outcome(
+        { ok: true, fans: 1, interaction: 1, approximate: false },
+        { ok: false, reason: 'no_panel' },
+      ),
+    }));
+    expect(html).toContain('采集完成');
+    expect(html).toContain('分享链接未采到');
+    expect(html).toContain('分享面板没弹出来');
+    expect(html).toContain('重采这篇可以再试');
+  });
+
+  it('解析层的失败也能原样说出来', () => {
+    const html = renderToStaticMarkup(createElement(Result, {
+      outcome: outcome(
+        { ok: true, fans: 1, interaction: 1, approximate: false },
+        { ok: false, reason: 'id_mismatch' },
+      ),
+    }));
+    expect(html).toContain('链接指向别的笔记');
   });
 });

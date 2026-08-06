@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import type { ExtractedComments, ExtractedNote, Pointer } from '../../types';
 import type { AuthorReadFailure } from '../../page/read-author';
+import type { ShareReadFailure } from '../../page/read-share';
+import type { ShareUrlFailure } from '../../core/share';
 import type { PanelState, UnreadableReason } from '../usePanelState';
 import { Empty } from './Empty';
 import { NoteCard } from './NoteCard';
@@ -15,6 +17,14 @@ export type AuthorOutcome =
   | { ok: true; fans: number; interaction: number; approximate: boolean }
   | { ok: false; reason: AuthorReadFailure };
 
+/**
+ * 分享链接这一步的结果。失败原因跨两层：页面层没点开面板是一回事，
+ * 解析层发现链接指向别的笔记是另一回事，两者的排查方向完全不同。
+ */
+export type ShareOutcome =
+  | { ok: true; url: string }
+  | { ok: false; reason: ShareReadFailure | ShareUrlFailure };
+
 /** 本次会话刚完成的一次采集，仅在结果仍对应当前笔记时存在。 */
 export interface ArchiveOutcome {
   mode: ArchiveMode;
@@ -25,6 +35,7 @@ export interface ArchiveOutcome {
   comments: ExtractedComments;
   commentImageFailures: string[];
   author: AuthorOutcome;
+  share: ShareOutcome;
 }
 
 const UNREADABLE: Record<UnreadableReason, { title: string; body: string }> = {
@@ -58,6 +69,17 @@ const AUTHOR_FAIL: Record<AuthorReadFailure, string> = {
   no_element: '页面上没找到作者元素',
   timeout: '等卡片超时',
   uid_mismatch: '卡片不属于这篇的作者',
+  page_error: '页面脚本出错',
+  inject_failed: '注入页面脚本失败',
+};
+
+const SHARE_FAIL: Record<ShareReadFailure | ShareUrlFailure, string> = {
+  no_element: '页面上没找到分享按钮',
+  no_panel: '分享面板没弹出来',
+  no_item: '面板里没有「复制链接」',
+  timeout: '等复制结果超时',
+  no_url: '复制出来的文案里没有链接',
+  id_mismatch: '链接指向别的笔记',
   page_error: '页面脚本出错',
   inject_failed: '注入页面脚本失败',
 };
@@ -150,13 +172,19 @@ export function Result({ outcome }: { outcome: ArchiveOutcome }) {
             <>作者信息未采到：{AUTHOR_FAIL[outcome.author.reason]}。重采这篇可以再试。</>
           )}
         </dd>
+        <dt>分享链接</dt>
+        <dd>
+          {outcome.share.ok
+            ? '已记录'
+            : `分享链接未采到：${SHARE_FAIL[outcome.share.reason]}。重采这篇可以再试。`}
+        </dd>
       </dl>
     </div>
   );
 }
 
 export function NoteView({
-  state, collector, datasetPath, onEditDatasetPath, onArchive, progress, message, justArchived, authorReading,
+  state, collector, datasetPath, onEditDatasetPath, onArchive, progress, message, justArchived, pageStep,
 }: {
   state: PanelState;
   collector: string;
@@ -166,7 +194,8 @@ export function NoteView({
   progress: { done: number; total: number } | null;
   message: string | null;
   justArchived: ArchiveOutcome | null;
-  authorReading: boolean;
+  /** 正在做哪一步页面交互。null 表示没在做。 */
+  pageStep: 'author' | 'share' | null;
 }) {
   /**
    * 没有笔记可采时的画面。路径输入框照样留在底部——它是「数据往哪写」的唯一
@@ -296,10 +325,16 @@ export function NoteView({
 
       <div className="pt-act">
         <PathDisplay value={datasetPath} onEdit={onEditDatasetPath} disabled={progress !== null} />
-        {authorReading ? (
+        {pageStep ? (
           <>
-            <div className="sect-h">正在读取作者信息…</div>
-            <p className="hint">页面上会闪一下作者卡片，随后自动收起。</p>
+            <div className="sect-h">
+              {pageStep === 'author' ? '正在读取作者信息…' : '正在读取分享链接…'}
+            </div>
+            <p className="hint">
+              {pageStep === 'author'
+                ? '页面上会闪一下作者卡片，随后自动收起。'
+                : '页面上会弹一下分享面板，随后自动收起。剪贴板不会被改动。'}
+            </p>
             <button className="btn" disabled>采集中…</button>
           </>
         ) : progress ? (
