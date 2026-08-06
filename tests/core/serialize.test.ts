@@ -128,6 +128,19 @@ describe('serializeNote', () => {
     expect(Object.keys(j.author)).not.toContain('verify_type');
     expect(j.author.fans).toBe(82);
   });
+
+  it('share_url 紧跟在 url 后面', () => {
+    const out = serializeNote({ ...base, share_url: 'https://www.xiaohongshu.com/discovery/item/abc?xsec_token=T' });
+    const keys = Object.keys(JSON.parse(out));
+    expect(keys[keys.indexOf('url') + 1]).toBe('share_url');
+  });
+
+  // 没采到就一个字段都不写，不用空串占位——与作者卡片同一条决策
+  it('没有 share_url 时整个 key 缺席', () => {
+    const out = serializeNote(base);
+    expect(out).not.toContain('share_url');
+    expect(Object.keys(JSON.parse(out))).not.toContain('share_url');
+  });
 });
 
 describe('sortKeysDeep', () => {

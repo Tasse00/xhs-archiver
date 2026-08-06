@@ -9,7 +9,9 @@ import { ensureRepoTemplates } from '../core/repo-template';
 import { archive } from '../core/archiver';
 import { readNoteViaTab, type PageDiag } from '../page/read-note';
 import { readAuthorViaTab } from '../page/read-author';
+import { readShareViaTab } from '../page/read-share';
 import { extractAuthorCard } from '../core/author';
+import { extractShareUrl } from '../core/share';
 import { nowBeijingIso } from '../core/time';
 import type { ExtractedComments, ExtractedNote, Pointer } from '../types';
 import { isTransient, resolvePanelState, type PanelState } from './usePanelState';
@@ -17,7 +19,7 @@ import { buildLogEntry, recordLog, shouldLog, type LogEntry } from './log';
 import {
   RootSetup, PermissionSetup, MissingRootSetup, CollectorSetup, PathSetup,
 } from './components/Setup';
-import { NoteView, type ArchiveOutcome, type AuthorOutcome } from './components/NoteView';
+import { NoteView, type ArchiveOutcome, type AuthorOutcome, type ShareOutcome } from './components/NoteView';
 import { LogView } from './components/LogView';
 import { IconRefresh, IconBrowse } from './components/Icons';
 import { openBrowser } from './open-browser';
@@ -87,7 +89,8 @@ export function App() {
   // 「刚刚采完」与「以前采过」在 mine 状态下长得一样，必须显式区分，
   // 否则用户点完按钮看到的是一段历史记录，无法确认本次是否成功。
   const [justArchived, setJustArchived] = useState<ArchiveOutcome | null>(null);
-  const [authorReading, setAuthorReading] = useState(false);
+  // 两步页面交互（作者卡片、分享面板）串行执行，界面要能分别说清在做哪一步。
+  const [pageStep, setPageStep] = useState<'author' | 'share' | null>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
   // 顶栏点「采集者」进来的改设置界面。null 表示没在改。
   const [editingCollector, setEditingCollector] = useState(false);
@@ -324,16 +327,21 @@ export function App() {
       return;
     }
 
-    // 作者卡片：让页面自己去请求，我们只接住结果。约 1.5–3 秒，期间卡片会在
-    // 页面上闪现后自动收起。采不到不阻断归档——附属数据不该把主干拖下水。
-    setAuthorReading(true);
-    // 初值就是失败态：读作者的任何一条岔路都不该让后面的 archive 拿到未赋值的变量。
+    // 两步页面交互，都在使用者眼皮底下发生，所以串行、各自兜住异常。
+    // 任一步失败都不阻断归档——附属数据不该把主干拖下水。
+    // 初值就是失败态：任何一条岔路都不该让后面的 archive 拿到未赋值的变量。
     let author: AuthorOutcome = { ok: false, reason: 'inject_failed' };
+    let share: ShareOutcome = { ok: false, reason: 'inject_failed' };
     const noteToWrite = { ...plan.note };
+
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tabId = tab?.id;
+
+    // 作者卡片：约 1.5–3 秒，期间卡片会在页面上闪现后自动收起。
+    setPageStep('author');
     try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.id !== undefined) {
-        const read = await readAuthorViaTab(tab.id, plan.note.author.user_id);
+      if (tabId !== undefined) {
+        const read = await readAuthorViaTab(tabId, plan.note.author.user_id);
         if (read.ok) {
           const card = extractAuthorCard(read.raw, nowBeijingIso());
           if (card) {
@@ -350,8 +358,30 @@ export function App() {
     } catch (e) {
       // 读作者是附属步骤，它自己出错绝不能把整篇采集带下水。
       author = { ok: false, reason: 'page_error' };
+    }
+
+    // 分享链接：让页面自己走完「分享 → 复制链接」。面板会弹出来一两秒，
+    // 剪贴板被拦下不真写。解析与身份校验在 core，页面脚本只负责弄出原文。
+    setPageStep('share');
+    try {
+      if (tabId !== undefined) {
+        const read = await readShareViaTab(tabId);
+        if (read.ok) {
+          const parsed = extractShareUrl(read.text, plan.note.noteId);
+          if (parsed.ok) {
+            noteToWrite.shareUrl = parsed.url;
+            share = { ok: true, url: parsed.url };
+          } else {
+            share = { ok: false, reason: parsed.reason };
+          }
+        } else {
+          share = { ok: false, reason: read.reason };
+        }
+      }
+    } catch (e) {
+      share = { ok: false, reason: 'page_error' };
     } finally {
-      setAuthorReading(false);
+      setPageStep(null);
     }
 
     setMessage(null);
@@ -394,6 +424,7 @@ export function App() {
       comments: plan.comments,
       commentImageFailures: res.commentImageFailures,
       author,
+      share,
     });
   }
 
@@ -469,7 +500,7 @@ export function App() {
           progress={progress}
           message={message}
           justArchived={justArchived}
-          authorReading={authorReading}
+          pageStep={pageStep}
         />
       )}
 

@@ -54,6 +54,8 @@ export interface RowMeta {
 /** 详情栏要的字段。与 RowMeta 来自同一次 note.json 读取。 */
 export interface NoteDetail {
   url: string;
+  /** 分享面板产出的地址，带 xsec_token。老数据没有这个字段，此时为空串。 */
+  shareUrl: string;
   author: NoteRecord['author'];
   /** NoteRecord 没有顶层 IP 字段，只能从 raw.ipLocation 取。取完 raw 就丢 */
   ipLocation: string;

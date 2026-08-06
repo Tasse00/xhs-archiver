@@ -53,6 +53,9 @@ export function serializeNote(n: NoteRecord): string {
     schema_version: n.schema_version,
     note_id: n.note_id,
     url: n.url,
+    // undefined 会被 JSON.stringify 直接丢掉，所以「采不到就整个字段缺席」
+    // 不需要额外分支，其余 key 的顺序也不受影响。
+    share_url: n.share_url,
     type: n.type,
     title: n.title,
     content: n.content,

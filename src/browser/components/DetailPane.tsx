@@ -120,17 +120,22 @@ function cardTime(iso: string): string {
  * 作者信息块。卡片字段整组可能缺席（老数据，或采集时没读到），
  * 那时只显示昵称——显示 0 粉丝会被当成事实。
  */
-export function AuthorBlock({ author, noteUrl }: { author: ArchivedAuthor; noteUrl: string }) {
+export function AuthorBlock({
+  author, noteUrl, shareUrl,
+}: { author: ArchivedAuthor; noteUrl: string; shareUrl: string }) {
   const hasCard = author.card_fetched_at !== undefined;
   const n = (v: number | undefined) => (v ?? 0).toLocaleString('zh-CN');
   const approx = author.approximate === true ? '约 ' : '';
+  // 不带 xsec_token 的 /explore/{id} 实测已经 404，所以有分享链接就用它。
+  // 老数据没有，回退到旧地址——点开是 404，但重采一次就修好了。
+  const href = shareUrl || noteUrl;
 
   return (
     <section className="bw-author">
       <p className="bw-author-line">
         <span className="bw-author-name">{author.nickname}</span>
         <a href={author.profile_url} target="_blank" rel="noreferrer" className="bw-link">作者主页 ↗</a>
-        <a href={noteUrl} target="_blank" rel="noreferrer" className="bw-link">小红书原文 ↗</a>
+        <a href={href} target="_blank" rel="noreferrer" className="bw-link">小红书原文 ↗</a>
       </p>
       {hasCard && author.desc && <p className="bw-author-desc">{author.desc}</p>}
       {hasCard && (
@@ -203,7 +208,7 @@ export function DetailPane({
         <p className="bw-content">{meta.content}</p>
         {meta.tags.length > 0 && <p className="bw-dim">{meta.tags.map((t) => `#${t}`).join(' ')}</p>}
 
-        <AuthorBlock author={detail.author} noteUrl={detail.url} />
+        <AuthorBlock author={detail.author} noteUrl={detail.url} shareUrl={detail.shareUrl} />
         <p>❤ {meta.liked} &nbsp; ⭐ {meta.collected} &nbsp; 💬 {meta.comment} &nbsp; ↗ {meta.share}</p>
         <p className="bw-dim">
           发布 {meta.publishedAt.slice(0, 16).replace('T', ' ')}

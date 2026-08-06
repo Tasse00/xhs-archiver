@@ -211,6 +211,8 @@ _index/68/68a1b2c3d4e5f6/
   "schema_version": 1,
   "note_id": "68a1b2c3d4e5f6",
   "url": "https://www.xiaohongshu.com/explore/68a1b2c3d4e5f6",
+  // share_url 采不到时整个字段缺席，不写空串；详见 2026-08-06-share-link-design.md
+  "share_url": "https://www.xiaohongshu.com/discovery/item/68a1b2c3d4e5f6?source=webshare&xsec_token=…",
   "type": "normal",
   "title": "…",
   "content": "…",
@@ -254,14 +256,15 @@ _index/68/68a1b2c3d4e5f6/
 }
 ```
 
-### 5.1 不存储 xsec_token
+### 5.1 顶层 url 不存储 xsec_token
 
 理由：xsec_token 具有时效性，落盘后数日内即失效，成为死数据，且会让每次重采的 diff 变脏。
 
-已知代价：小红书目前对不带 token 的 `/explore/{id}` 链接返回「当前笔记暂时无法浏览」。因此 `url` 字段落盘后应被理解为**标识符而非可点击链接**。配套措施：
+已知代价：小红书对不带 token 的 `/explore/{id}` 链接返回「当前笔记暂时无法浏览」（`error_code=300031`）。因此顶层 `url` 字段落盘后应被理解为**标识符而非可点击链接**——回访原帖靠的是 `share_url`，不是 `url`。
 
-- `note.json` 保留 `note_id` 与 `author.profile_url`（作者主页链接长期有效），供日后人工回访
-- 采集完成后，侧边栏提供「复制原帖链接（含临时 token）」按钮，仅存于内存，不落盘
+### 5.1.1 分享链接
+
+采集时通过合成事件让页面自己走完「分享 →「复制链接」」，把产出的地址记进 `note.json` 的 `share_url`。它带 `xsec_token`，因此点得开，但也会过期——这跟 5.1 节「顶层 `url` 不带 token」的取舍并不矛盾：`url` 是笔记的稳定身份，`share_url` 是当下能点开的入口，两者语义分开、各司其职。采不到不阻断归档，整个字段缺席，不写空串占位。完整设计见 `docs/superpowers/specs/2026-08-06-share-link-design.md`。
 
 ### 5.2 保留 raw 字段
 

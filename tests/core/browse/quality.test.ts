@@ -10,7 +10,7 @@ const ref = { noteId: A, datasetPath: DS };
 
 function detailWith(files: string[]): NoteDetail {
   return {
-    url: '', ipLocation: '',
+    url: '', shareUrl: '', ipLocation: '',
     author: { user_id: 'u1', nickname: '小 A', avatar_url: '', profile_url: '' },
     images: files.map((file, i) => ({
       index: i + 1, file, is_live: false, file_id: `f${i}`,

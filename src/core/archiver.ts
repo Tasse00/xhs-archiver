@@ -140,6 +140,7 @@ export async function archive(opts: ArchiveOptions): Promise<ArchiveResult> {
     schema_version: 1,
     note_id: note.noteId,
     url: note.url,
+    share_url: note.shareUrl,
     type: 'normal',
     title: note.title,
     content: note.content,
