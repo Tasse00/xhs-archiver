@@ -1,16 +1,16 @@
 import type { ExtractResult, RawNote, ExtractedImage } from '../types';
 import { isValidTimestamp, toBeijingIso } from './time';
 
-/** 互动数在页面里是字符串，可能带「万」「亿」「+」。 */
+/** 互动数与作者计数在页面里都是字符串，可能带「千」「万」「亿」「+」。 */
 export function parseCount(v: unknown): number {
   if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
   if (typeof v !== 'string') return 0;
   const s = v.trim();
   if (s === '') return 0;
   if (/^\d+$/.test(s)) return Number.parseInt(s, 10);
-  const m = s.match(/^([\d.]+)\s*(万|亿)\+?$/);
+  const m = s.match(/^([\d.]+)\s*(千|万|亿)\+?$/);
   if (m) {
-    const unit = m[2] === '万' ? 10_000 : 100_000_000;
+    const unit = m[2] === '千' ? 1_000 : m[2] === '万' ? 10_000 : 100_000_000;
     return Math.round(Number.parseFloat(m[1]!) * unit);
   }
   const lead = s.match(/^([\d.]+)/);

@@ -12,6 +12,13 @@ describe('parseCount', () => {
     expect(parseCount('')).toBe(0);
     expect(parseCount(undefined)).toBe(0);
   });
+
+  // 作者卡片的计数与互动数同样是字符串，且实测出现过「1千+」这种量级。
+  it('识别千', () => {
+    expect(parseCount('1千')).toBe(1000);
+    expect(parseCount('1千+')).toBe(1000);
+    expect(parseCount('1.5千')).toBe(1500);
+  });
 });
 
 describe('stripTopicTags', () => {
