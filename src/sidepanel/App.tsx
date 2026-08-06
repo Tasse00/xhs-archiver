@@ -329,9 +329,10 @@ export function App() {
 
     // 两步页面交互，都在使用者眼皮底下发生，所以串行、各自兜住异常。
     // 任一步失败都不阻断归档——附属数据不该把主干拖下水。
-    // 初值就是失败态：任何一条岔路都不该让后面的 archive 拿到未赋值的变量。
-    let author: AuthorOutcome = { ok: false, reason: 'inject_failed' };
-    let share: ShareOutcome = { ok: false, reason: 'inject_failed' };
+    // 初值就是失败态：任何一条岔路（比如拿不到 tabId）都不该让后面的 archive
+    // 拿到未赋值的变量，而那种情况是真失败，不是 skipped。
+    let author: AuthorOutcome = { kind: 'fail', reason: 'inject_failed' };
+    let share: ShareOutcome = { kind: 'fail', reason: 'inject_failed' };
     const noteToWrite = { ...plan.note };
 
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -346,18 +347,21 @@ export function App() {
           const card = extractAuthorCard(read.raw, nowBeijingIso());
           if (card) {
             noteToWrite.author = { ...plan.note.author, ...card };
-            author = { ok: true, fans: card.fans, interaction: card.interaction, approximate: card.approximate };
+            author = {
+              kind: 'ok', fans: card.fans, interaction: card.interaction,
+              approximate: card.approximate,
+            };
           } else {
             // 卡片回来了但三个计数一个都没有，等同于没采到。
-            author = { ok: false, reason: 'timeout' };
+            author = { kind: 'fail', reason: 'timeout' };
           }
         } else {
-          author = { ok: false, reason: read.reason };
+          author = { kind: 'fail', reason: read.reason };
         }
       }
     } catch (e) {
       // 读作者是附属步骤，它自己出错绝不能把整篇采集带下水。
-      author = { ok: false, reason: 'page_error' };
+      author = { kind: 'fail', reason: 'page_error' };
     }
 
     // 分享链接：让页面自己走完「分享 → 复制链接」。面板会弹出来一两秒，
@@ -370,16 +374,16 @@ export function App() {
           const parsed = extractShareUrl(read.text, plan.note.noteId);
           if (parsed.ok) {
             noteToWrite.shareUrl = parsed.url;
-            share = { ok: true, url: parsed.url };
+            share = { kind: 'ok', url: parsed.url };
           } else {
-            share = { ok: false, reason: parsed.reason };
+            share = { kind: 'fail', reason: parsed.reason };
           }
         } else {
-          share = { ok: false, reason: read.reason };
+          share = { kind: 'fail', reason: read.reason };
         }
       }
     } catch (e) {
-      share = { ok: false, reason: 'page_error' };
+      share = { kind: 'fail', reason: 'page_error' };
     } finally {
       setPageStep(null);
     }
