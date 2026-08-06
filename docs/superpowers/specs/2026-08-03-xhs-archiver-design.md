@@ -223,6 +223,9 @@ _index/68/68a1b2c3d4e5f6/
     "avatar_url": "…",
     "profile_url": "https://www.xiaohongshu.com/user/profile/5f8a…"
   },
+  // author 在采到悬浮卡片时会多出 desc、verify_type、follows、fans、
+  // interaction、counts_raw、approximate、card_fetched_at 八个字段，
+  // 详见 2026-08-06-author-card-design.md
   "interact": { "liked": 1024, "collected": 300, "comment": 56, "share": 12 },
   "images": [
     {

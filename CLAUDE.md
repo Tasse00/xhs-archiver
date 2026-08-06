@@ -11,6 +11,7 @@
 - **侧边栏界面重做**：顶栏（仓库/采集者可点改）+ 可滚动主体 + 固定底部动作区 + 折叠日志，样式集中在 `src/sidepanel/panel.css`（token 化，深浅主题各一套）
 - **写入路径要确认一次**（`need_path`，排在采集者 ID 之后），之后常驻底部只读展示；点「修改」进入独立设置页，保存时才持久化
 - **他人采过改为可接管**，写入路径默认改为固定的 `collected`（见下方决策表）
+- **随笔记采集作者悬浮卡片信息**（简介、关注、粉丝、获赞与收藏），并进 `note.json` 的 `author`；浏览页表格增加粉丝、获赞收藏两列并可排序，详情栏展示完整作者信息与原文链接。设计见 `docs/superpowers/specs/2026-08-06-author-card-design.md`
 
 **发布：** 手动在 GitHub Actions 上触发 `Release` workflow 并填版本号，产出挂在 Release 上的 zip（手动加载安装，不上架商店）。版本号唯一来源是 `package.json`，`manifest.config.ts` 从中读取——不要在 manifest 里硬编码版本号。细节见 `docs/superpowers/specs/2026-08-05-github-actions-release-design.md`。
 
@@ -56,6 +57,17 @@
 - **评论图没有 `fileId`**，按笔记原图规则构造的地址一律 404。只有 `WB_DFT`/`WB_PRV`，且 url 是 `http://`，要升 https。
 - **评论图的声明尺寸是展示尺寸**（284×367 的图实际 556×717），拿它做尺寸校验会让评论图全数失败。
 
+作者悬浮卡片（同样是登录页实测）：
+
+- **卡片数据来自 `GET /api/sns/web/v1/user/hover_card`**，需要签名，裸 fetch 是 406。`xsec_token` 就是 `raw.user.xsecToken`。
+- **合成事件可以让页面自己去请求**，但必须对 `document` 到目标元素的**整条祖先链**逐层派发不冒泡的 `pointerenter`/`mouseenter`。只派发目标元素及其两三层父节点，卡片不弹、请求也不发——这条踩过，别再试一遍。
+- **触发元素是 `.author-container span.username`**。页面底部的 `.author-wrapper > a.author` 不是它。
+- **收卡片时 leave 系列必须带 `relatedTarget`**，并对那个元素再派发一整套 enter。只派发 leave 收不掉，卡片会一直挂在使用者眼前。
+- **响应体里没有 userId**，身份只能从请求 URL 的 `target_user_id` 取，必须与 `note.user.userId` 比对。
+- **页面对 hover_card 有客户端缓存**，同一作者第二次 hover 不再发请求。所以必须有 DOM 兜底（`.tooltip-content` 下的 `.basic-info .name`、`.desc`、`.interaction-info a.interaction`），否则「自己先看过一眼的作者反而采不到」。
+- **不要走作者主页 SSR**。`user/profile/{id}` 的 HTML 里有同样的数据且不需要签名，但有会话级频控降级：一分钟内请求几次，数字就从 `384` 变成 `10+`，且**真实导航过去看到的也是 `10+`**，等于污染使用者自己的浏览体验。
+- **计数可能是「10万+」「1千+」**，`parseCount` 给出的不是真值，所以要留 `counts_raw` 与 `approximate`。
+
 ## 已定的决策，不要重开讨论
 
 这些都是权衡过的结果，理由写在设计文档里。如果要改，先读理由：
@@ -73,6 +85,10 @@
 | 评论配图失败**不**影响归档状态 | 不要把它算进 `partial`——那会因为一张配图丢掉整篇的指针 |
 | 不采集视频 | 明确排除在 v1 之外 |
 | 插件不执行任何 git 命令 | commit/push 由使用者自己做 |
+| 作者卡片靠合成事件让页面自己请求 | 不要裸 fetch（406）、不要加签、不要用 `chrome.debugger` |
+| 作者字段并入 `note.json` 的 `author` | 不要为它单开 `author.json` |
+| 没采到就一个卡片字段都不写；DOM 兜底时省略 `verify_type` | 不要写 `fans: 0`、`verify_type: 0` 占位 |
+| 作者信息采不到不阻断归档 | 不要把它算进 `partial` |
 
 ## 工作约定
 
