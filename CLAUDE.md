@@ -13,6 +13,9 @@
 - **他人采过改为可接管**，写入路径默认改为固定的 `collected`（见下方决策表）
 - **随笔记采集作者悬浮卡片信息**（简介、关注、粉丝、获赞与收藏），并进 `note.json` 的 `author`；浏览页表格增加粉丝、获赞收藏两列并可排序，详情栏展示完整作者信息与原文链接。设计见 `docs/superpowers/specs/2026-08-06-author-card-design.md`
 - **随笔记采集分享链接**（分享面板 →「复制链接」的产出），进 `note.json` 的 `share_url`；浏览页详情栏的原文链接改用它。设计见 `docs/superpowers/specs/2026-08-06-share-link-design.md`
+- **作者信息与分享链接的采集可以关掉**：顶栏齿轮 →「采集设置」，两个开关默认都开。
+  关掉只是跳过该步，不阻断归档、不影响仓库里已采过的笔记。设计见
+  `docs/superpowers/specs/2026-08-06-capture-toggles-and-lightbox-design.md`
 
 **发布：** 手动在 GitHub Actions 上触发 `Release` workflow 并填版本号，产出挂在 Release 上的 zip（手动加载安装，不上架商店）。版本号唯一来源是 `package.json`，`manifest.config.ts` 从中读取——不要在 manifest 里硬编码版本号。Release 的更新说明由 GitHub 按「上一个 tag 以来合并的 PR」自动汇总，**每个 PR 标题就是发布说明里的一行**，所以标题怎么写有硬性约定，见下方「工作约定」。细节见 `docs/superpowers/specs/2026-08-05-github-actions-release-design.md`。
 
@@ -105,6 +108,7 @@
 | 剪贴板拦截而不真写 | 不要让一次采集覆盖使用者当前的剪贴板内容 |
 | 分享面板由谁开由谁关 | 使用者自己点开的面板不要动；不要「一律关掉」 |
 | 分享链接采不到不阻断归档 | 不要把它算进 `partial`，也不要写空串占位 |
+| 采集开关默认开，关掉只跳过该步 | 不要把「关掉了」塞进 `AuthorReadFailure`/`ShareReadFailure`——那两个枚举描述的是页面交互怎么失败的，而关掉根本没发生过交互。也不要因为关掉就少写 `note.json` 里 `AuthorBase` 那部分身份字段 |
 
 ## 工作约定
 
