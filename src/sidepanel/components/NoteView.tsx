@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { ExtractedComments, ExtractedNote, Pointer } from '../../types';
+import type { AuthorReadFailure } from '../../page/read-author';
 import type { PanelState, UnreadableReason } from '../usePanelState';
 import { Empty } from './Empty';
 import { NoteCard } from './NoteCard';
@@ -8,6 +9,11 @@ import { ArchiveActions, PathDisplay, type ArchiveMode } from './Actions';
 import {
   IconCheck, IconCross, IconDoc, IconGlobe, IconLoading, IconPlug, IconVideo,
 } from './Icons';
+
+/** 作者卡片这一步的结果。采不到不阻断归档，但要如实说。 */
+export type AuthorOutcome =
+  | { ok: true; fans: number; interaction: number; approximate: boolean }
+  | { ok: false; reason: AuthorReadFailure };
 
 /** 本次会话刚完成的一次采集，仅在结果仍对应当前笔记时存在。 */
 export interface ArchiveOutcome {
@@ -18,6 +24,7 @@ export interface ArchiveOutcome {
   imageCount: number;
   comments: ExtractedComments;
   commentImageFailures: string[];
+  author: AuthorOutcome;
 }
 
 const UNREADABLE: Record<UnreadableReason, { title: string; body: string }> = {
@@ -45,6 +52,14 @@ const UNREADABLE: Record<UnreadableReason, { title: string; body: string }> = {
     title: '这篇笔记还没加载完整',
     body: '稍等一下，或者刷新页面重试。',
   },
+};
+
+const AUTHOR_FAIL: Record<AuthorReadFailure, string> = {
+  no_element: '页面上没找到作者元素',
+  timeout: '等卡片超时',
+  uid_mismatch: '卡片不属于这篇的作者',
+  page_error: '页面脚本出错',
+  inject_failed: '注入页面脚本失败',
 };
 
 /** 只有这三种状态能采集，取出它们共有的部分。 */
@@ -97,7 +112,7 @@ function Verdict({ state, sameDir }: { state: PanelState; sameDir: boolean }) {
   );
 }
 
-function Result({ outcome }: { outcome: ArchiveOutcome }) {
+export function Result({ outcome }: { outcome: ArchiveOutcome }) {
   const verb = outcome.mode === 'new' ? '采集' : outcome.mode === 'update' ? '更新' : '迁移';
   if (outcome.status === 'partial') {
     return (
@@ -122,13 +137,26 @@ function Result({ outcome }: { outcome: ArchiveOutcome }) {
         <dd>
           {c.collectedCount} / {c.declaredTotal} 条{!c.complete && '（只采已加载的）'}
         </dd>
+        <dt>作者</dt>
+        <dd>
+          {outcome.author.ok ? (
+            <>
+              {outcome.author.approximate && '约 '}
+              {outcome.author.fans.toLocaleString('zh-CN')} 粉丝 ·{' '}
+              {outcome.author.approximate && '约 '}
+              {outcome.author.interaction.toLocaleString('zh-CN')} 获赞与收藏
+            </>
+          ) : (
+            <>作者信息未采到：{AUTHOR_FAIL[outcome.author.reason]}。重采这篇可以再试。</>
+          )}
+        </dd>
       </dl>
     </div>
   );
 }
 
 export function NoteView({
-  state, collector, datasetPath, onEditDatasetPath, onArchive, progress, message, justArchived,
+  state, collector, datasetPath, onEditDatasetPath, onArchive, progress, message, justArchived, authorReading,
 }: {
   state: PanelState;
   collector: string;
@@ -138,6 +166,7 @@ export function NoteView({
   progress: { done: number; total: number } | null;
   message: string | null;
   justArchived: ArchiveOutcome | null;
+  authorReading: boolean;
 }) {
   /**
    * 没有笔记可采时的画面。路径输入框照样留在底部——它是「数据往哪写」的唯一
@@ -267,7 +296,13 @@ export function NoteView({
 
       <div className="pt-act">
         <PathDisplay value={datasetPath} onEdit={onEditDatasetPath} disabled={progress !== null} />
-        {progress ? (
+        {authorReading ? (
+          <>
+            <div className="sect-h">正在读取作者信息…</div>
+            <p className="hint">页面上会闪一下作者卡片，随后自动收起。</p>
+            <button className="btn" disabled>采集中…</button>
+          </>
+        ) : progress ? (
           <>
             <div className="sect-h">正在下载图片 <b>{progress.done} / {progress.total}</b></div>
             <div className="bar">
