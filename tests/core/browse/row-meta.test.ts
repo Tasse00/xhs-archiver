@@ -105,6 +105,28 @@ describe('loadNote', () => {
     expect(r.ok && r.detail.ipLocation).toBe('');
   });
 
+  it('读出作者卡片字段', async () => {
+    await store.writeFile(`${DS}/${A}/note.json`, noteJson({
+      author: {
+        user_id: 'u1', nickname: '小 A', avatar_url: 'https://x/a.jpg', profile_url: 'https://x/u1',
+        desc: '简介', verify_type: 0, follows: 21, fans: 384, interaction: 1500,
+        counts_raw: { follows: '21', fans: '384', interaction: '1500' },
+        approximate: false, card_fetched_at: '2026-08-06T14:32:10+08:00',
+      },
+    }));
+    const r = await loadNote(store, ref);
+    expect(r.ok && r.meta.authorFans).toBe(384);
+    expect(r.ok && r.meta.authorInteraction).toBe(1500);
+  });
+
+  // 老数据没有这些字段。null 不等于 0——「不知道」和「是 0」必须区分开
+  it('老 note.json 没有卡片字段时给 null', async () => {
+    await store.writeFile(`${DS}/${A}/note.json`, noteJson());
+    const r = await loadNote(store, ref);
+    expect(r.ok && r.meta.authorFans).toBeNull();
+    expect(r.ok && r.meta.authorInteraction).toBeNull();
+  });
+
   it('同一 noteId 在两个数据集下各自独立', async () => {
     await store.writeFile(`${DS}/${A}/note.json`, noteJson({ title: '这份在 08-03' }));
     await store.writeFile(`collected/2026-07-29/${A}/note.json`, noteJson({ title: '这份在 07-29' }));

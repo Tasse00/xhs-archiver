@@ -32,6 +32,10 @@ export interface RowMeta {
   content: string;
   tags: string[];
   authorNickname: string;
+  /** 采集时刻的作者粉丝数。null 表示这篇没采到作者信息（老数据或当时读取失败）。 */
+  authorFans: number | null;
+  /** 采集时刻的作者获赞与收藏数。null 的含义同上。 */
+  authorInteraction: number | null;
   liked: number;
   collected: number;
   comment: number;

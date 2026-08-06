@@ -10,6 +10,7 @@ const DS = 'collected/2026-08-03';
 function meta(over: Partial<RowMeta>): RowMeta {
   return {
     noteId: A, datasetPath: DS, title: '', content: '', tags: [], authorNickname: '',
+    authorFans: null, authorInteraction: null,
     liked: 0, collected: 0, comment: 0, share: 0, imageCount: 0, coverFile: null,
     collector: 'zach', firstArchivedAt: '', lastArchivedAt: '', archiveCount: 1,
     publishedAt: '', lastEditedAt: '', ...over,

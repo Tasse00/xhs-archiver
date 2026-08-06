@@ -18,6 +18,7 @@ function meta(over: Partial<RowMeta>): RowMeta {
     authorNickname: '', liked: 0, collected: 0, comment: 0, share: 0,
     imageCount: 0, coverFile: null, collector: '', firstArchivedAt: '',
     lastArchivedAt: '', archiveCount: 1, publishedAt: '', lastEditedAt: '',
+    authorFans: null, authorInteraction: null,
     ...over,
   };
 }
@@ -90,5 +91,23 @@ describe('compareByMeta', () => {
     const x = meta({ noteId: A, liked: 5 });
     const y = meta({ noteId: B, liked: 5 });
     expect(compareByMeta('liked', x, y)).toBeLessThan(0);
+  });
+
+  it('按粉丝数排序', () => {
+    expect(compareByMeta('authorFans', meta({ authorFans: 100 }), meta({ authorFans: 200 }))).toBeLessThan(0);
+  });
+
+  // 没采到作者信息的行沉到末尾。把 null 当 0 会让它们混在真实的零粉丝账号里
+  it('authorFans 为 null 的沉到末尾', () => {
+    const withValue = meta({ noteId: A, authorFans: 0 });
+    const withNull = meta({ noteId: B, authorFans: null });
+    expect(compareByMeta('authorFans', withNull, withValue)).toBeGreaterThan(0);
+    expect(compareByMeta('authorFans', withValue, withNull)).toBeLessThan(0);
+  });
+
+  // 两个都没采到时仍要有确定的序，否则每次重排位置乱跳
+  it('两个都是 null 时回落到 noteId', () => {
+    expect(compareByMeta('authorFans', meta({ noteId: A, authorFans: null }), meta({ noteId: B, authorFans: null })))
+      .toBeLessThan(0);
   });
 });
