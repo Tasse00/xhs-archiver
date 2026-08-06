@@ -210,8 +210,22 @@ body { font-size: 13px; background: var(--paper); }
   flex: none; display: flex; justify-content: space-between; gap: 12px;
   padding: 8px 14px; color: #ddd; font-size: 12px;
 }
-.bw-lb-img { flex: 1 1 auto; min-height: 0; display: grid; place-items: center; padding: 12px; }
-.bw-lb-img img { max-width: 100%; max-height: 100%; object-fit: contain; }
+/* 原来是 grid + place-items:center。那样 auto 行高按图片 max-content 算，
+   而 img 的 max-height:100% 又要反过来参照行高——循环解析的结果是
+   max-height 退化成 auto，竖长图撑爆容器、底部被裁掉。 */
+.bw-lb-img { flex: 1 1 auto; min-height: 0; position: relative; overflow: hidden; }
+
+.bw-lb-zoom { display: inline-flex; align-items: center; gap: 6px; }
+.bw-lb-zoom button {
+  width: 20px; height: 20px; display: grid; place-items: center;
+  border: 1px solid rgba(255,255,255,.25); border-radius: 5px;
+  background: none; color: #ddd; font-size: 13px; line-height: 1; cursor: pointer;
+}
+.bw-lb-zoom button:hover { background: rgba(255,255,255,.14); color: #fff; }
+.bw-lb-zoom b {
+  min-width: 42px; text-align: center; font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
 
 /* ── 顶栏搜索与排序 ───────────────────────────────────── */
 .bw-head .th { cursor: pointer; }
