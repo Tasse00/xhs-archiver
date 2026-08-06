@@ -14,7 +14,7 @@
 - **随笔记采集作者悬浮卡片信息**（简介、关注、粉丝、获赞与收藏），并进 `note.json` 的 `author`；浏览页表格增加粉丝、获赞收藏两列并可排序，详情栏展示完整作者信息与原文链接。设计见 `docs/superpowers/specs/2026-08-06-author-card-design.md`
 - **随笔记采集分享链接**（分享面板 →「复制链接」的产出），进 `note.json` 的 `share_url`；浏览页详情栏的原文链接改用它。设计见 `docs/superpowers/specs/2026-08-06-share-link-design.md`
 
-**发布：** 手动在 GitHub Actions 上触发 `Release` workflow 并填版本号，产出挂在 Release 上的 zip（手动加载安装，不上架商店）。版本号唯一来源是 `package.json`，`manifest.config.ts` 从中读取——不要在 manifest 里硬编码版本号。细节见 `docs/superpowers/specs/2026-08-05-github-actions-release-design.md`。
+**发布：** 手动在 GitHub Actions 上触发 `Release` workflow 并填版本号，产出挂在 Release 上的 zip（手动加载安装，不上架商店）。版本号唯一来源是 `package.json`，`manifest.config.ts` 从中读取——不要在 manifest 里硬编码版本号。Release 的更新说明由 GitHub 按「上一个 tag 以来合并的 PR」自动汇总，**每个 PR 标题就是发布说明里的一行**，所以标题怎么写有硬性约定，见下方「工作约定」。细节见 `docs/superpowers/specs/2026-08-05-github-actions-release-design.md`。
 
 **下一步动作：** 继续按 `docs/superpowers/plans/2026-08-03-xhs-archiver-v1.md` 的 Task 13 走验收清单（24 项），修实测中暴露的问题；并补验上面两项。
 
@@ -110,10 +110,45 @@
 
 - **TDD**：先写失败的测试，跑一遍确认它失败，再写最小实现。计划里每个任务都是这个结构。
 - **提交粒度**：每个任务结束提交一次，计划里给了 commit message。
+- **所有改动经 PR 合并进 main，不直接往 main push**（唯一例外是发布流水线自己推的版本号 commit）。合并方式不限，怎么方便怎么来——Release 的更新说明认的是 PR 本身，不是 commit 形态。PR 标题与正文的格式要求见下方「PR 标题与正文」。
 - **改了行为就同步改文档**，与代码放在同一个 commit 里。本项目的设计经历过多轮推翻重来（数据源方案、索引结构、图片获取规则都改过），下一个 session 完全依赖文档判断现状，一处不同步就会让人按作废的方案实现。推翻某个结论时把旧说法直接删掉，不要留着。文档之间冲突以设计文档为准。
 - **核心层不碰 DOM 和 chrome API**。`src/core/` 下所有依赖（fetch、decode、storage）都通过参数注入，因此能在 Node 环境下用 Vitest 跑。碰 `chrome.*` 的代码只应出现在 `src/sidepanel/`、`src/background/`、`src/page/`。
 - **FSA 测试用内存 mock**，计划 Task 5 提供了完整实现（`tests/helpers/memory-fs.ts`），不需要真实浏览器。
 - 用中文回复；代码注释也用中文，写「为什么」而不是「做了什么」。
+
+### PR 标题与正文
+
+Release 的更新说明是 GitHub 按「上一个 tag 以来合并的 PR」汇总出来的，一个 PR 一行，内容就是 PR 标题。**所以 PR 标题是写给使用者看的发布说明，不是给自己看的备忘。**
+
+**标题格式**：`<type>: <这次改动让什么变得不一样>`，中文，不带句号，控制在 50 字以内。`type` 沿用仓库现有 commit 的取值：`feat` / `fix` / `refactor` / `docs` / `chore` / `test`。
+
+写「多了什么能力、修好了什么毛病」，不要写「动了哪个文件、改了哪个函数」——读的人没有代码上下文：
+
+- ✅ `feat: 随笔记采集作者的粉丝与获赞数`
+- ✅ `fix: 目录被删后面板不再把仓库显示成空的`
+- ❌ `feat: 增加 author-card.ts`（读的人不知道这是什么）
+- ❌ `fix: 修复 bug`（等于没说）
+
+**正文结构**：四段，缺一段就说明这个 PR 还没想清楚。目的是让半年后的人（包括下一个 session 的 agent）只读 PR 就能还原来龙去脉，不必去翻 diff 猜动机。
+
+```markdown
+## 为什么
+起因是什么、原来的行为哪里不对。是实测发现的就写清复现路径。
+
+## 怎么做
+选的方案，以及**为什么不选另一个**。踩过的坑、试过但行不通的路子写在这里——
+这些不写进代码注释就会丢，下一个人会原样再踩一遍。
+
+## 改了什么
+按文件或模块列关键改动，一条一句。不必逐行复述 diff，但读完要能知道
+去哪儿找。涉及数据格式或落盘结构的变化必须点名。
+
+## 怎么验证的
+跑了哪些测试、结果如何；有没有在真实页面上验过、验的是哪一条。
+没验的部分明写「未验证」，不要含糊过去。
+```
+
+正文里的结论如果是长期有效的（实测硬事实、被推翻的方案），**同时**写进本文件或设计文档——PR 正文没人会回头翻，只有这两个文件是每个 session 都读的。
 
 ## 需要用户参与的环节
 
