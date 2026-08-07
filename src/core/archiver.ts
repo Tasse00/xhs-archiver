@@ -11,6 +11,7 @@ import type {
   Pointer,
 } from '../types';
 import type { Store } from './store';
+import { removeEmptyParent } from './delete';
 import {
   downloadCommentImage,
   downloadImage,
@@ -296,12 +297,4 @@ async function readArchiveCount(store: Store, path: string): Promise<number> {
   } catch {
     return 0;
   }
-}
-
-/** 迁移后清理因此变空的日期目录，但不删采集者目录。 */
-async function removeEmptyParent(store: Store, path: string): Promise<void> {
-  const parts = path.split('/');
-  if (parts.length < 3) return;
-  const parent = parts.slice(0, -1).join('/');
-  if ((await store.listDir(parent)).length === 0) await store.removeDir(parent);
 }
