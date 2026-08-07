@@ -95,8 +95,15 @@ export function App() {
   const [detailOpen, setDetailOpen] = useState(true);
   const [paneWidth, setPaneWidth] = useState(() => Number(localStorage.getItem('bw.paneWidth') ?? 380));
   const [cursor, setCursor] = useState(0);
+  // 刚删掉的那一篇的标题。删除的反馈必须显式，否则一行悄悄消失像是出了 bug。
+  const [deletedTitle, setDeletedTitle] = useState<string | null>(null);
 
   useEffect(() => { localStorage.setItem('bw.paneWidth', String(paneWidth)); }, [paneWidth]);
+
+  // 删掉的可能正是最后一行，游标要收回来，否则详情栏那段的 current 会是 undefined
+  useEffect(() => {
+    setCursor((c) => Math.min(c, Math.max(0, refs.length - 1)));
+  }, [refs.length]);
 
   // ↑↓ 换行、Enter 开详情、Esc 关详情。看图器自己也监听 Esc，
   // 它在更内层且会 stopPropagation 之外还先执行，所以不会互相打架
@@ -140,6 +147,12 @@ export function App() {
         <div className="bw-main">
           <Tree tree={tree} total={total} selected={selected} onSelect={select} />
           <div className="bw-list">
+            {deletedTitle !== null && (
+              <div className="bw-toast">
+                已删除《{deletedTitle || '无标题'}》
+                <button className="bw-btn" onClick={() => setDeletedTitle(null)}>知道了</button>
+              </div>
+            )}
             <Table
               refs={visible}
               stateOf={stateOf}
@@ -179,6 +192,13 @@ export function App() {
                   detail={sink.details.get(currentKey!)!}
                   onClose={() => setDetailOpen(false)}
                   thumbUrl={thumbUrl}
+                  onDeleted={() => {
+                    // 三件事缺一不可：行消失、详情栏关掉、提示条给出反馈。
+                    // 只摘行的话，详情栏会继续显示一篇已经不存在的笔记。
+                    setDeletedTitle(currentState.meta.title);
+                    setDetailOpen(false);
+                    removeNote(current.noteId);
+                  }}
                 />
               </div>
             </>
