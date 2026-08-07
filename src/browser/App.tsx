@@ -25,9 +25,12 @@ export function App() {
     setRootName(name);
   }, []);
 
-  const { tree, refs, selected, select, progress, reload } = useScope(store);
+  const { tree, refs, selected, select, progress, reload, removeNote, gen } = useScope(store);
   const total = useMemo(() => tree.reduce((a, n) => a + n.count, 0), [tree]);
-  const { stateOf, request, sink, version } = useRows(store, refs);
+  // 行缓存与「已扫描」标记都挂在这上面。删掉一行不改变 epoch，所以不会作废
+  // 已经读好的元数据和已经确认过的排序/搜索范围。
+  const epoch = useMemo(() => `${selected ?? '*'}::${gen}`, [selected, gen]);
+  const { stateOf, request, sink, version } = useRows(store, epoch);
   const { thumbUrl, forget } = useThumbnail(store);
 
   const [query, setQuery] = useState('');
@@ -38,14 +41,12 @@ export function App() {
   const [scanned, setScanned] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
 
-  const scopeId = useMemo(() => `${selected ?? '*'}::${refs.length}`, [selected, refs.length]);
-
   /**
    * 排序、搜索、按采集者筛选都要整个范围的元数据，做不到懒加载，
    * 所以做成显式动作：先问一句，再带进度扫，可取消。
    */
   const ensureScanned = useCallback(async (): Promise<boolean> => {
-    if (store === null || scanned === scopeId) return true;
+    if (store === null || scanned === epoch) return true;
     if (!window.confirm(`需要读取当前范围的 ${refs.length} 篇笔记，才能排序或搜索。继续？`)) return false;
     const ctrl = new AbortController();
     abort.current = ctrl;
@@ -60,9 +61,9 @@ export function App() {
     });
     // 取消了就不打标记：半份数据不能拿去排序或搜索，那会让用户
     // 看到一个没有说明的子集
-    if (r.completed) setScanned(scopeId);
+    if (r.completed) setScanned(epoch);
     return r.completed;
-  }, [store, scanned, scopeId, refs, sink]);
+  }, [store, scanned, epoch, refs, sink]);
 
   const visible = useMemo(
     () => sortRefs(filterRefs(refs, sink.metas, { query, collector }), sink.metas, sort),
@@ -130,7 +131,8 @@ export function App() {
           onShowCommentCol={setShowCommentCol}
           detailOpen={detailOpen}
           onDetailOpen={setDetailOpen}
-          onReload={() => { setScanned(null); reload(); }}
+          /* reload 会 +1 gen，epoch 随之变化，scanned 自然对不上，不必再手动清 */
+          onReload={() => reload()}
           buildProgress={progress ? `${progress.done} · ${progress.current}` : null}
           scan={scan}
           onCancelScan={() => abort.current?.abort()}

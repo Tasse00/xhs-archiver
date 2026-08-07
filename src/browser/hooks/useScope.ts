@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { buildTree, type BuildProgress } from '../../core/browse/tree';
-import { collectRefs } from '../../core/browse/scope';
+import { collectRefs, dropNote } from '../../core/browse/scope';
 import type { DatasetNode, NoteRef } from '../../core/browse/types';
 import type { ReadStore } from '../../core/read-store';
 
@@ -44,5 +44,15 @@ export function useScope(store: ReadStore | null) {
 
   const reload = useCallback(() => setGen((g) => g + 1), []);
 
-  return { tree, refs, selected, select: setSelected, progress, reload };
+  /** 删掉一篇之后就地更新树，不重扫仓库。refs 由下面那个 effect 自动跟着变。 */
+  const removeNote = useCallback((noteId: string) => {
+    setTree((prev) => dropNote(prev, noteId));
+  }, []);
+
+  // 选中的数据集可能因为删掉最后一篇而整个消失，留着会让面包屑指向一个不存在的目录
+  useEffect(() => {
+    if (selected !== null && findNode(tree, selected) === null) setSelected(null);
+  }, [tree, selected]);
+
+  return { tree, refs, selected, select: setSelected, progress, reload, removeNote, gen };
 }
