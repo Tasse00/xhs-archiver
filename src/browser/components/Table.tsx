@@ -145,7 +145,7 @@ export function Table({
         </div>
       </div>
 
-      <div className="bw-foot">↑↓ 换行 · Enter 开详情 · Esc 关详情 · 共 {refs.length} 篇</div>
+      <div className="bw-foot">↑↓ 换行 · Enter 开详情 · 共 {refs.length} 篇</div>
     </div>
   );
 }

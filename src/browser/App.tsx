@@ -11,6 +11,7 @@ import { Tree } from './components/Tree';
 import { Table } from './components/Table';
 import { DetailPane } from './components/DetailPane';
 import { TopBar, type ScanState } from './components/TopBar';
+import { browseKeyAction } from './keys';
 import { useScope } from './hooks/useScope';
 import { useRows } from './hooks/useRows';
 import { useThumbnail } from './hooks/useThumbnail';
@@ -97,14 +98,13 @@ export function App() {
 
   useEffect(() => { localStorage.setItem('bw.paneWidth', String(paneWidth)); }, [paneWidth]);
 
-  // ↑↓ 换行、Enter 开详情、Esc 关详情。看图器自己也监听 Esc，
-  // 它在更内层且会 stopPropagation 之外还先执行，所以不会互相打架
+  // ↑↓ 换行、Enter 开详情。Esc 归看图器，理由见 keys.ts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowDown') { e.preventDefault(); setCursor((c) => Math.min(refs.length - 1, c + 1)); }
-      if (e.key === 'ArrowUp') { e.preventDefault(); setCursor((c) => Math.max(0, c - 1)); }
-      if (e.key === 'Enter') setDetailOpen(true);
-      if (e.key === 'Escape') setDetailOpen(false);
+      const action = browseKeyAction(e.key);
+      if (action === 'next') { e.preventDefault(); setCursor((c) => Math.min(refs.length - 1, c + 1)); }
+      if (action === 'prev') { e.preventDefault(); setCursor((c) => Math.max(0, c - 1)); }
+      if (action === 'open-detail') setDetailOpen(true);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
