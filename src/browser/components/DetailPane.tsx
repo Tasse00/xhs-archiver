@@ -183,7 +183,8 @@ export function DetailPane({
   return (
     <aside className="bw-detail">
       <div className="bw-detail-bar">
-        <span className="bw-dim">{meta.title || '（无标题）'}</span>
+        <span className="bw-dim bw-detail-title">{meta.title || '（无标题）'}</span>
+        <DeleteBlock store={store} noteRef={noteRef} onDeleted={onDeleted} />
         <button className="bw-btn" onClick={onClose}>✕</button>
       </div>
 
@@ -255,8 +256,6 @@ export function DetailPane({
             </>
           )}
         </section>
-
-        <DeleteBlock store={store} noteRef={noteRef} onDeleted={onDeleted} />
       </div>
 
       {lightbox !== null && (

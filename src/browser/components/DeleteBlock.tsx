@@ -13,7 +13,11 @@ type Phase =
   | { kind: 'error'; text: string };
 
 /**
- * 删除入口 + 内联确认块。
+ * 删除入口 + 悬浮确认面板。
+ *
+ * 入口按钮摆在详情栏顶部（关闭按钮左侧），常驻可见——原先挂在详情栏底部，
+ * 评论一多就要滚到底才看得见。确认面板不占正文流：用 position: absolute
+ * 浮在按钮下方，展开、收起都不会推挤评论区的内容。
  *
  * 不用 modal：浏览页已经有两处抢 Escape（App 关详情栏、Lightbox 关看图器），
  * 再塞一个就是三方打架，得引入一套焦点与优先级管理，为一个确认框不值。
@@ -57,47 +61,46 @@ export function DeleteBlock({
     onDeleted();
   }
 
-  if (phase.kind === 'idle' || phase.kind === 'planning') {
-    return (
-      <div className="bw-del">
-        <button className="bw-btn danger" disabled={phase.kind === 'planning'} onClick={() => void open()}>
-          删除这篇
-        </button>
-      </div>
-    );
-  }
-
-  if (phase.kind === 'error') {
-    return (
-      <div className="bw-del">
-        <p className="bw-note bad">{phase.text}</p>
-        <button className="bw-btn" onClick={() => setPhase({ kind: 'idle' })}>知道了</button>
-      </div>
-    );
-  }
-
-  const { plan } = phase;
   const busy = phase.kind === 'deleting';
 
   return (
-    <div className="bw-del open">
-      <p className="bw-del-h">删除后不可撤销，恢复只能靠 git</p>
-      <div className="bw-del-list">
-        {plan.dirs.length === 0 ? (
-          <p className="bw-dim">没有数据目录，只清理索引指针</p>
-        ) : (
-          plan.dirs.map((d) => <p key={d}>{d}/</p>)
-        )}
-        {plan.pointers.length > 0 && (
-          <p className="bw-dim">索引指针：{plan.pointers.map((p) => p.collector).join('、')}</p>
-        )}
-      </div>
-      <div className="bw-del-acts">
-        <button className="bw-btn" disabled={busy} onClick={() => setPhase({ kind: 'idle' })}>取消</button>
-        <button className="bw-btn danger" disabled={busy} onClick={() => void confirm(plan)}>
-          {busy ? '删除中…' : '确认删除'}
-        </button>
-      </div>
+    <div className="bw-del-inline">
+      <button
+        className="bw-btn danger"
+        disabled={phase.kind === 'planning' || busy}
+        onClick={() => void open()}
+      >
+        删除这篇
+      </button>
+
+      {phase.kind === 'error' && (
+        <div className="bw-del-panel">
+          <p className="bw-note bad">{phase.text}</p>
+          <button className="bw-btn" onClick={() => setPhase({ kind: 'idle' })}>知道了</button>
+        </div>
+      )}
+
+      {(phase.kind === 'confirm' || phase.kind === 'deleting') && (
+        <div className="bw-del-panel">
+          <p className="bw-del-h">删除后不可撤销，恢复只能靠 git</p>
+          <div className="bw-del-list">
+            {phase.plan.dirs.length === 0 ? (
+              <p className="bw-dim">没有数据目录，只清理索引指针</p>
+            ) : (
+              phase.plan.dirs.map((d) => <p key={d}>{d}/</p>)
+            )}
+            {phase.plan.pointers.length > 0 && (
+              <p className="bw-dim">索引指针：{phase.plan.pointers.map((p) => p.collector).join('、')}</p>
+            )}
+          </div>
+          <div className="bw-del-acts">
+            <button className="bw-btn" disabled={busy} onClick={() => setPhase({ kind: 'idle' })}>取消</button>
+            <button className="bw-btn danger" disabled={busy} onClick={() => void confirm(phase.plan)}>
+              {busy ? '删除中…' : '确认删除'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
