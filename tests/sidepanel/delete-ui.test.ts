@@ -3,9 +3,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { DeleteAction } from '../../src/sidepanel/components/Actions';
+import { DeleteResultCard, NoteView } from '../../src/sidepanel/components/NoteView';
 import type { DeletePlan } from '../../src/core/delete';
-import type { Pointer } from '../../src/types';
+import type { ExtractedComments, ExtractedNote, Pointer } from '../../src/types';
 
 afterEach(cleanup);
 
@@ -97,5 +99,94 @@ describe('DeleteAction', () => {
     }));
 
     expect(screen.getByText('没有数据目录，只清理索引指针')).toBeTruthy();
+  });
+});
+
+const comments: ExtractedComments = {
+  declaredTotal: 0, collectedCount: 0, complete: true, hasMore: false, list: [],
+};
+
+const note = {
+  noteId: NOTE,
+  url: `https://www.xiaohongshu.com/explore/${NOTE}`,
+  shareUrl: '',
+  title: '一篇笔记',
+  content: '正文',
+  tags: [],
+  publishedAt: '2026-08-01T10:00:00+08:00',
+  lastEditedAt: '2026-08-01T10:00:00+08:00',
+  author: { user_id: 'u1', nickname: '小红', avatar_url: '', profile_url: '' },
+  interact: { liked: 1, collected: 1, comment: 0, share: 0 },
+  images: [],
+  raw: {},
+} as unknown as ExtractedNote;
+
+function noteViewProps(overrides: Record<string, unknown>) {
+  return {
+    state: { kind: 'mine', note, comments, pointer: pointer('zach', `collected/2026-08-03/${NOTE}`), duplicates: [] },
+    collector: 'zach',
+    datasetPath: 'collected/2026-08-03',
+    onEditDatasetPath: vi.fn(),
+    onArchive: vi.fn(),
+    progress: null,
+    message: null,
+    justArchived: null,
+    pageStep: null,
+    deletePlan: null,
+    onOpenDelete: vi.fn(),
+    onCancelDelete: vi.fn(),
+    onConfirmDelete: vi.fn(),
+    justDeleted: null,
+    ...overrides,
+  } as never;
+}
+
+describe('NoteView 里的删除入口', () => {
+  it('自己采过时出现删除入口', () => {
+    const html = renderToStaticMarkup(createElement(NoteView, noteViewProps({})));
+    expect(html).toContain('删除这篇');
+  });
+
+  // 「无论是谁采集的」——别人采过的同样能删
+  it('别人采过时也出现删除入口', () => {
+    const html = renderToStaticMarkup(createElement(NoteView, noteViewProps({
+      state: {
+        kind: 'others', note, comments,
+        pointers: [pointer('alice', `alice/2026-08-01/${NOTE}`)],
+      },
+    })));
+    expect(html).toContain('删除这篇');
+  });
+
+  it('没人采过时没有删除入口', () => {
+    const html = renderToStaticMarkup(createElement(NoteView, noteViewProps({
+      state: { kind: 'ready', note, comments },
+    })));
+    expect(html).not.toContain('删除这篇');
+  });
+
+  it('采集进行中时不显示删除入口', () => {
+    const html = renderToStaticMarkup(createElement(NoteView, noteViewProps({
+      progress: { done: 1, total: 3 },
+    })));
+    expect(html).not.toContain('删除这篇');
+  });
+});
+
+describe('DeleteResultCard', () => {
+  it('说清删了几个目录几个指针', () => {
+    const html = renderToStaticMarkup(
+      createElement(DeleteResultCard, { result: { dirs: 2, pointers: 3 } }),
+    );
+    expect(html).toContain('已删除');
+    expect(html).toContain('2 个目录');
+    expect(html).toContain('3 个索引指针');
+  });
+
+  it('只清了指针时如实说', () => {
+    const html = renderToStaticMarkup(
+      createElement(DeleteResultCard, { result: { dirs: 0, pointers: 1 } }),
+    );
+    expect(html).toContain('只清理了索引指针');
   });
 });

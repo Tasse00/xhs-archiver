@@ -7,6 +7,7 @@ import {
 import { chromeLocalArea, loadSettings, saveSettings, defaultDatasetPath, isValidDatasetPath } from '../core/settings';
 import { ensureRepoTemplates } from '../core/repo-template';
 import { archive } from '../core/archiver';
+import { deleteNote, planDelete, type DeletePlan, type DeleteResult } from '../core/delete';
 import { readNoteViaTab, type PageDiag } from '../page/read-note';
 import { readAuthorViaTab } from '../page/read-author';
 import { readShareViaTab } from '../page/read-share';
@@ -91,6 +92,9 @@ export function App() {
   const [justArchived, setJustArchived] = useState<ArchiveOutcome | null>(null);
   // 两步页面交互（作者卡片、分享面板）串行执行，界面要能分别说清在做哪一步。
   const [pageStep, setPageStep] = useState<'author' | 'share' | null>(null);
+  // 删除确认块的内容。null 表示没打开——打开时才去读盘算计划。
+  const [deletePlan, setDeletePlan] = useState<DeletePlan | null>(null);
+  const [justDeleted, setJustDeleted] = useState<DeleteResult | null>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
   // 顶栏点「采集者」进来的改设置界面。null 表示没在改。
   const [editingCollector, setEditingCollector] = useState(false);
@@ -154,6 +158,9 @@ export function App() {
       if (myGen !== genRef.current) return;
       // 换了标签页或换了笔记，上一次的采集结果就不再是「本次」的了。
       setJustArchived(null);
+      setJustDeleted(null);
+      // 换了笔记，上一篇算出来的删除计划就不能再用了
+      setDeletePlan(null);
       setMessage(null);
 
       // 每个周期都查一遍：权限会在两次判定之间被回收（关掉浏览页就会），
@@ -462,6 +469,44 @@ export function App() {
     });
   }
 
+  async function openDelete() {
+    if (!store) return;
+    const noteId = planOf(state)?.note.noteId;
+    if (!noteId) return;
+    try {
+      setDeletePlan(await planDelete(store, noteId));
+    } catch (e) {
+      setMessage(`读取索引失败，删除没有开始：${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!store || !root || !deletePlan) return;
+    // 点确认本身就是用户手势，权限刚被回收时点一次「允许」就能继续。
+    // 必须赶在其他 await 之前，手势的有效期只有几秒。
+    if (!(await ensurePermission(root))) {
+      setMessage('目录授权已失效，什么都没删。请重新授权后再试。');
+      return;
+    }
+    const plan = deletePlan;
+    let res: DeleteResult;
+    try {
+      res = await deleteNote(store, plan);
+    } catch (e) {
+      if (isMissingError(e)) {
+        setMessage('数据仓库目录已不存在，删除没有完成。');
+        setState({ kind: 'missing_root' });
+        return;
+      }
+      // 顺序保证了残留只会是孤儿目录，所以这句话永远成立
+      setMessage(`删除失败：${e instanceof Error ? e.message : String(e)}。索引指针可能已删除，数据目录可能有残留。`);
+      return;
+    }
+    // 必须先 refresh 再记结果：refresh 会清空「本次」标记
+    await refresh();
+    setJustDeleted(res);
+  }
+
   const configured =
     state.kind !== 'need_root' && state.kind !== 'need_permission' &&
     state.kind !== 'missing_root' &&
@@ -551,6 +596,11 @@ export function App() {
           message={message}
           justArchived={justArchived}
           pageStep={pageStep}
+          deletePlan={deletePlan}
+          onOpenDelete={() => void openDelete()}
+          onCancelDelete={() => setDeletePlan(null)}
+          onConfirmDelete={() => void confirmDelete()}
+          justDeleted={justDeleted}
         />
       )}
 

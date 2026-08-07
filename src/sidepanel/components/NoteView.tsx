@@ -3,11 +3,12 @@ import type { ExtractedComments, ExtractedNote, Pointer } from '../../types';
 import type { AuthorReadFailure } from '../../page/read-author';
 import type { ShareReadFailure } from '../../page/read-share';
 import type { ShareUrlFailure } from '../../core/share';
+import type { DeletePlan, DeleteResult } from '../../core/delete';
 import type { PanelState, UnreadableReason } from '../usePanelState';
 import { Empty } from './Empty';
 import { NoteCard } from './NoteCard';
 import { Record } from './Record';
-import { ArchiveActions, PathDisplay, type ArchiveMode } from './Actions';
+import { ArchiveActions, DeleteAction, PathDisplay, type ArchiveMode } from './Actions';
 import {
   IconCheck, IconCross, IconDoc, IconGlobe, IconLoading, IconPlug, IconVideo,
 } from './Icons';
@@ -195,8 +196,26 @@ export function Result({ outcome }: { outcome: ArchiveOutcome }) {
   );
 }
 
+/** 刚删完的结果卡。与采集结果卡同一位置、同一套样式，切换笔记后消失。 */
+export function DeleteResultCard({ result }: { result: DeleteResult }) {
+  return (
+    <div className="result ok">
+      <div className="result-h"><IconCheck />已删除</div>
+      <dl>
+        <dt>数据</dt>
+        <dd>
+          {result.dirs === 0 ? '只清理了索引指针，没有数据目录' : `${result.dirs} 个目录`}
+        </dd>
+        <dt>索引</dt><dd>{result.pointers} 个索引指针</dd>
+      </dl>
+      <div className="note">恢复只能靠 git —— 仓库里已经没有这篇了。</div>
+    </div>
+  );
+}
+
 export function NoteView({
   state, collector, datasetPath, onEditDatasetPath, onArchive, progress, message, justArchived, pageStep,
+  deletePlan, onOpenDelete, onCancelDelete, onConfirmDelete, justDeleted,
 }: {
   state: PanelState;
   collector: string;
@@ -208,6 +227,12 @@ export function NoteView({
   justArchived: ArchiveOutcome | null;
   /** 正在做哪一步页面交互。null 表示没在做。 */
   pageStep: 'author' | 'share' | null;
+  /** 删除确认块的内容。null 表示确认块没打开。 */
+  deletePlan: DeletePlan | null;
+  onOpenDelete(): void;
+  onCancelDelete(): void;
+  onConfirmDelete(): void;
+  justDeleted: DeleteResult | null;
 }) {
   /**
    * 没有笔记可采时的画面。路径输入框照样留在底部——它是「数据往哪写」的唯一
@@ -283,6 +308,17 @@ export function NoteView({
 
   const a = archivable(state);
   if (!a) return idle(<div className="pt-body" />);
+
+  // 刚删完，状态已经回到「可采集」。先说结果，否则界面看起来像什么都没发生
+  if (justDeleted) {
+    return idle(
+      <div className="pt-body">
+        <DeleteResultCard result={justDeleted} />
+        <p className="hint">切换到别的笔记后这条提示会消失。</p>
+        <NoteCard note={a.note} comments={a.comments} />
+      </div>,
+    );
+  }
 
   // 刚点完按钮，最想知道的是成没成，所以结果卡排在笔记卡前面
   if (justArchived) {
@@ -366,6 +402,16 @@ export function NoteView({
               busy={false}
               onArchive={onArchive}
             />
+            {/* 只在有指针时出现：没人采过的笔记没什么可删 */}
+            {a.existing && (
+              <DeleteAction
+                plan={deletePlan}
+                busy={false}
+                onOpen={onOpenDelete}
+                onCancel={onCancelDelete}
+                onConfirm={onConfirmDelete}
+              />
+            )}
           </>
         )}
         {message && <div className="field-err">{message}</div>}

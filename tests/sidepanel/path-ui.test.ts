@@ -133,6 +133,11 @@ describe('NoteView', () => {
       message: null,
       justArchived: null,
       pageStep: null,
+      deletePlan: null,
+      onOpenDelete: vi.fn(),
+      onCancelDelete: vi.fn(),
+      onConfirmDelete: vi.fn(),
+      justDeleted: null,
     }));
 
     expect(html).toContain('· 修改');
