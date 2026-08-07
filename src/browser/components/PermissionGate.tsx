@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { loadRootHandle, rootExists } from '../../core/handle-store';
+import { ensurePermission, hasPermission, loadRootHandle, rootExists } from '../../core/handle-store';
 import { createStore, type Store } from '../../core/store';
 
 type Gate =
@@ -9,12 +9,6 @@ type Gate =
   /** 句柄和权限都在，目录本身没了。不拦住的话扫描会把它显示成空仓库。 */
   | { kind: 'missing_root'; name: string }
   | { kind: 'ready' };
-
-/**
- * 浏览页只读，所以只申请 read。注意这并不会把句柄降权——句柄仍是侧边栏
- * 用 readwrite 取得的那一个，「只读」由模块边界保证，见设计 §8.1。
- */
-const MODE = { mode: 'read' as const };
 
 export function PermissionGate({
   onReady,
@@ -44,7 +38,9 @@ export function PermissionGate({
       if (!handle) return setGate({ kind: 'no_root' });
       // 页面加载时不能直接 requestPermission：它必须由用户手势触发，
       // 自动调用会被浏览器忽略，用户只会看到一个卡住的空页面。
-      if ((await handle.queryPermission(MODE)) === 'granted') return await attach(handle);
+      // 浏览页是管理中心，要能删数据，所以查的是 readwrite。句柄本来就是侧边栏
+      // 用 readwrite 取得的那一个，这里改的是声明，不是能力。
+      if (await hasPermission(handle)) return await attach(handle);
       setGate({ kind: 'need_permission', handle });
     })();
   }, [attach]);
@@ -70,11 +66,11 @@ export function PermissionGate({
   }
   return (
     <div className="bw-gate">
-      <p>浏览数据仓库需要读取授权。浏览器要求这一步由你点击触发。</p>
+      <p>访问数据仓库需要授权。浏览器要求这一步由你点击触发。</p>
       <button
         onClick={() => {
           void (async () => {
-            if ((await gate.handle.requestPermission(MODE)) === 'granted') await attach(gate.handle);
+            if (await ensurePermission(gate.handle)) await attach(gate.handle);
           })();
         }}
       >

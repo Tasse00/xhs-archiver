@@ -18,6 +18,9 @@
   `docs/superpowers/specs/2026-08-06-capture-toggles-and-lightbox-design.md`
 - **浏览页看图器可缩放**：默认完整显示整张图，滚轮缩放、拖拽平移、双击切换、⤢ 复位。
   缩放交给 `react-zoom-pan-pinch`
+- **可以删掉采错的笔记**：侧边栏与浏览页详情栏各一个「删除这篇」。按 `note_id` 清掉全部
+  指针与它们指向的目录，不再需要手动去仓库里删两处。设计见
+  `docs/superpowers/specs/2026-08-07-delete-archived-note-design.md`
 
 **发布：** 手动在 GitHub Actions 上触发 `Release` workflow 并填版本号，产出挂在 Release 上的 zip（手动加载安装，不上架商店）。版本号唯一来源是 `package.json`，`manifest.config.ts` 从中读取——不要在 manifest 里硬编码版本号。Release 的更新说明由 GitHub 按「上一个 tag 以来合并的 PR」自动汇总，**每个 PR 标题就是发布说明里的一行**，所以标题怎么写有硬性约定，见下方「工作约定」。细节见 `docs/superpowers/specs/2026-08-05-github-actions-release-design.md`。
 
@@ -126,6 +129,9 @@
 | 采集开关默认开，关掉只跳过该步 | 不要把「关掉了」塞进 `AuthorReadFailure`/`ShareReadFailure`——那两个枚举描述的是页面交互怎么失败的，而关掉根本没发生过交互。也不要因为关掉就少写 `note.json` 里 `AuthorBase` 那部分身份字段 |
 | 浏览页列表只处理 `Enter`，`Esc` 与 `↑` `↓` 都归看图器 | 不要再给列表绑 `Esc` 或 `↑` `↓`。列表与看图器都在 `window` 上监听，事件不从对方冒泡而来，谁也拦不住谁——同时响应就是「关一张图连详情栏一起关掉」「看图时换了一篇笔记、图当场消失」。换行改用点行（点行同时开详情栏），详情栏另有 `✕` 与顶栏按钮 |
 | 看图器的缩放交给 `react-zoom-pan-pinch` | 不要自己写手势——锚点数学不难，难的是 pointer capture、拖拽与 click 的竞争、捏合、边界收敛。也不要换 photoswipe（2024-05 后停更，且是整套 lightbox）或 @panzoom/panzoom（框架无关，React 粘合层仍要自己写） |
+| 删除按 `note_id` 清全部痕迹 | 不要只删眼前这一份——同一篇存成多份本来就是要清理的异常，删一次只清一份等于让人重复劳动 |
+| 删除时先删指针、再删数据目录 | 不要反过来。中断后留孤儿目录是安全的（`quality.ts` 的 `no_pointer` 认得它），留孤儿指针会破坏「指针存在 ⟹ 数据完整」，污染所有人的查重 |
+| 浏览页是管理中心，页面组件拿完整 `Store` | 但 `src/core/browse/*` 仍只收 `ReadStore`，不要一起放宽——那些模块不写盘，收窄类型是免费的保证 |
 
 ## 工作约定
 

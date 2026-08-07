@@ -1,4 +1,5 @@
 import type { Pointer } from '../types';
+import type { ReadStore } from './read-store';
 import type { Store } from './store';
 import { serializePointer } from './serialize';
 
@@ -9,8 +10,12 @@ export function bucketOf(noteId: string): string {
   return noteId.slice(0, 2);
 }
 
+export function bucketDir(noteId: string): string {
+  return `${INDEX_ROOT}/${bucketOf(noteId)}`;
+}
+
 export function pointerDir(noteId: string): string {
-  return `${INDEX_ROOT}/${bucketOf(noteId)}/${noteId}`;
+  return `${bucketDir(noteId)}/${noteId}`;
 }
 
 export function pointerPath(noteId: string, collector: string): string {
@@ -20,13 +25,16 @@ export function pointerPath(noteId: string, collector: string): string {
 /**
  * 返回该笔记的全部指针。长度 > 1 说明发生了并发采集竞态
  * （多人各自未 pull 就采了同一篇），需人工清理。
+ *
+ * 只收 ReadStore：查指针是纯读操作，浏览页的质量检查和删除计划都要用它，
+ * 收完整 Store 会逼着只读的调用方各自再抄一份。
  */
-export async function lookup(store: Store, noteId: string): Promise<Pointer[]> {
-  const names = await store.listDir(pointerDir(noteId));
+export async function lookup(store: ReadStore, noteId: string): Promise<Pointer[]> {
+  const dir = pointerDir(noteId);
   const out: Pointer[] = [];
-  for (const name of names) {
-    if (!name.endsWith('.json')) continue;
-    const txt = await store.readText(`${pointerDir(noteId)}/${name}`);
+  for (const e of await store.listEntries(dir)) {
+    if (e.kind !== 'file' || !e.name.endsWith('.json')) continue;
+    const txt = await store.readText(`${dir}/${e.name}`);
     if (txt === null) continue;
     try {
       out.push(JSON.parse(txt) as Pointer);

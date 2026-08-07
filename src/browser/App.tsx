@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { toReadStore, type ReadStore } from '../core/read-store';
 import type { Store } from '../core/store';
 import { noteKeyOf } from '../core/browse/scope';
 import { scanScope } from '../core/browse/scan';
@@ -17,18 +16,22 @@ import { useRows } from './hooks/useRows';
 import { useThumbnail } from './hooks/useThumbnail';
 
 export function App() {
-  const [store, setStore] = useState<ReadStore | null>(null);
+  const [store, setStore] = useState<Store | null>(null);
   const [rootName, setRootName] = useState('');
 
-  // 只把只读面往下传。传完整 Store 的话，「浏览页不写盘」就只剩口头承诺
+  // 浏览页是管理中心，要能删数据，所以留完整 Store。core/browse/* 仍然只收
+  // ReadStore——那些模块确实不写盘，放宽只会白丢一层免费的保证。
   const onReady = useCallback((s: Store, name: string) => {
-    setStore(toReadStore(s));
+    setStore(s);
     setRootName(name);
   }, []);
 
-  const { tree, refs, selected, select, progress, reload } = useScope(store);
+  const { tree, refs, selected, select, progress, reload, removeNote, gen } = useScope(store);
   const total = useMemo(() => tree.reduce((a, n) => a + n.count, 0), [tree]);
-  const { stateOf, request, sink, version } = useRows(store, refs);
+  // 行缓存与「已扫描」标记都挂在这上面。删掉一行不改变 epoch，所以不会作废
+  // 已经读好的元数据和已经确认过的排序/搜索范围。
+  const epoch = useMemo(() => `${selected ?? '*'}::${gen}`, [selected, gen]);
+  const { stateOf, request, sink, version } = useRows(store, epoch);
   const { thumbUrl, forget } = useThumbnail(store);
 
   const [query, setQuery] = useState('');
@@ -39,14 +42,12 @@ export function App() {
   const [scanned, setScanned] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
 
-  const scopeId = useMemo(() => `${selected ?? '*'}::${refs.length}`, [selected, refs.length]);
-
   /**
    * 排序、搜索、按采集者筛选都要整个范围的元数据，做不到懒加载，
    * 所以做成显式动作：先问一句，再带进度扫，可取消。
    */
   const ensureScanned = useCallback(async (): Promise<boolean> => {
-    if (store === null || scanned === scopeId) return true;
+    if (store === null || scanned === epoch) return true;
     if (!window.confirm(`需要读取当前范围的 ${refs.length} 篇笔记，才能排序或搜索。继续？`)) return false;
     const ctrl = new AbortController();
     abort.current = ctrl;
@@ -61,9 +62,9 @@ export function App() {
     });
     // 取消了就不打标记：半份数据不能拿去排序或搜索，那会让用户
     // 看到一个没有说明的子集
-    if (r.completed) setScanned(scopeId);
+    if (r.completed) setScanned(epoch);
     return r.completed;
-  }, [store, scanned, scopeId, refs, sink]);
+  }, [store, scanned, epoch, refs, sink]);
 
   const visible = useMemo(
     () => sortRefs(filterRefs(refs, sink.metas, { query, collector }), sink.metas, sort),
@@ -95,8 +96,15 @@ export function App() {
   const [detailOpen, setDetailOpen] = useState(true);
   const [paneWidth, setPaneWidth] = useState(() => Number(localStorage.getItem('bw.paneWidth') ?? 380));
   const [cursor, setCursor] = useState(0);
+  // 刚删掉的那一篇的标题。删除的反馈必须显式，否则一行悄悄消失像是出了 bug。
+  const [deletedTitle, setDeletedTitle] = useState<string | null>(null);
 
   useEffect(() => { localStorage.setItem('bw.paneWidth', String(paneWidth)); }, [paneWidth]);
+
+  // 删掉的可能正是最后一行，游标要收回来，否则详情栏那段的 current 会是 undefined
+  useEffect(() => {
+    setCursor((c) => Math.min(c, Math.max(0, refs.length - 1)));
+  }, [refs.length]);
 
   // Enter 开详情。Esc 与 ↑↓ 都归看图器，理由见 keys.ts
   useEffect(() => {
@@ -127,7 +135,8 @@ export function App() {
           onShowCommentCol={setShowCommentCol}
           detailOpen={detailOpen}
           onDetailOpen={setDetailOpen}
-          onReload={() => { setScanned(null); reload(); }}
+          /* reload 会 +1 gen，epoch 随之变化，scanned 自然对不上，不必再手动清 */
+          onReload={() => reload()}
           buildProgress={progress ? `${progress.done} · ${progress.current}` : null}
           scan={scan}
           onCancelScan={() => abort.current?.abort()}
@@ -135,6 +144,12 @@ export function App() {
         <div className="bw-main">
           <Tree tree={tree} total={total} selected={selected} onSelect={select} />
           <div className="bw-list">
+            {deletedTitle !== null && (
+              <div className="bw-toast">
+                已删除《{deletedTitle || '无标题'}》
+                <button className="bw-btn" onClick={() => setDeletedTitle(null)}>知道了</button>
+              </div>
+            )}
             <Table
               refs={visible}
               stateOf={stateOf}
@@ -174,6 +189,13 @@ export function App() {
                   detail={sink.details.get(currentKey!)!}
                   onClose={() => setDetailOpen(false)}
                   thumbUrl={thumbUrl}
+                  onDeleted={() => {
+                    // 三件事缺一不可：行消失、详情栏关掉、提示条给出反馈。
+                    // 只摘行的话，详情栏会继续显示一篇已经不存在的笔记。
+                    setDeletedTitle(currentState.meta.title);
+                    setDetailOpen(false);
+                    removeNote(current.noteId);
+                  }}
                 />
               </div>
             </>

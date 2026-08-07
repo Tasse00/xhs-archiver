@@ -5,18 +5,18 @@ import type { ScanSink } from '../../core/browse/scan';
 import type { NoteKey, NoteRef, RowState } from '../../core/browse/types';
 import type { ReadStore } from '../../core/read-store';
 
-export function useRows(store: ReadStore | null, refs: NoteRef[]) {
+export function useRows(store: ReadStore | null, epoch: string) {
   const [version, setVersion] = useState(0);
   const sink = useRef<ScanSink>({ metas: new Map(), details: new Map(), errors: new Map() });
   const inflight = useRef(new Set<NoteKey>());
 
-  // 换范围就清空：元数据键是物理路径，跨范围本来可以复用，但保留会让
-  // 「重新加载」失去意义——用户点它就是想看磁盘上的新状态
+  // 只在换范围或点「重新加载」时清空——那两件事才意味着「想看磁盘上的新状态」。
+  // 挂在 refs 上是不行的：删掉一行也会换出新数组，于是删一篇就要重读全部行。
   useEffect(() => {
     sink.current = { metas: new Map(), details: new Map(), errors: new Map() };
     inflight.current.clear();
     setVersion((v) => v + 1);
-  }, [refs]);
+  }, [epoch]);
 
   const request = useCallback(
     (ref: NoteRef) => {

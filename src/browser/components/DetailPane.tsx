@@ -3,9 +3,10 @@ import { loadComments, type CommentsResult } from '../../core/browse/comments';
 import { checkQuality, type QualityReport } from '../../core/browse/quality';
 import type { NoteDetail, NoteRef, RowMeta } from '../../core/browse/types';
 import { noteKeyOf } from '../../core/browse/scope';
-import type { ReadStore } from '../../core/read-store';
+import type { Store } from '../../core/store';
 import type { ArchivedAuthor, CommentRecord } from '../../types';
 import type { ThumbSize } from '../hooks/useThumbnail';
+import { DeleteBlock } from './DeleteBlock';
 import { Lightbox, type LightboxImage } from './Lightbox';
 
 function qualityText(q: QualityReport): { tone: string; text: string } | null {
@@ -151,14 +152,16 @@ export function AuthorBlock({
 }
 
 export function DetailPane({
-  store, noteRef, meta, detail, onClose, thumbUrl,
+  store, noteRef, meta, detail, onClose, thumbUrl, onDeleted,
 }: {
-  store: ReadStore;
+  /** 详情栏要能删数据，所以收完整 Store。core/browse/* 那一层仍只收 ReadStore */
+  store: Store;
   noteRef: NoteRef;
   meta: RowMeta;
   detail: NoteDetail;
   onClose(): void;
   thumbUrl(ref: NoteRef, file: string, size: ThumbSize): string | undefined;
+  onDeleted(): void;
 }) {
   const [comments, setComments] = useState<CommentsResult>({ kind: 'none' });
   const [quality, setQuality] = useState<QualityReport | null>(null);
@@ -180,7 +183,8 @@ export function DetailPane({
   return (
     <aside className="bw-detail">
       <div className="bw-detail-bar">
-        <span className="bw-dim">{meta.title || '（无标题）'}</span>
+        <span className="bw-dim bw-detail-title">{meta.title || '（无标题）'}</span>
+        <DeleteBlock store={store} noteRef={noteRef} onDeleted={onDeleted} />
         <button className="bw-btn" onClick={onClose}>✕</button>
       </div>
 
