@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createStore, type Store } from '../../src/core/store';
 import { memRoot } from '../helpers/memory-fs';
-import { bucketOf, pointerDir, pointerPath, lookup, writePointer, removePointer } from '../../src/core/index-store';
+import { bucketOf, bucketDir, pointerDir, pointerPath, lookup, writePointer, removePointer } from '../../src/core/index-store';
+import type { ReadStore } from '../../src/core/read-store';
 import type { Pointer } from '../../src/types';
 
 const p = (collector: string, path: string): Pointer => ({
@@ -20,6 +21,7 @@ describe('路径规则', () => {
   it('bucket 取 noteId 前两位', () => expect(bucketOf('6a030b86')).toBe('6a'));
   it('指针目录', () => expect(pointerDir('6a030b86')).toBe('_index/6a/6a030b86'));
   it('指针文件', () => expect(pointerPath('6a030b86', 'zach')).toBe('_index/6a/6a030b86/zach.json'));
+  it('桶目录', () => expect(bucketDir('6a030b86')).toBe('_index/6a'));
 });
 
 describe('lookup', () => {
@@ -54,6 +56,21 @@ describe('lookup', () => {
     await writePointer(store, p('zach', 'zach/2026-08-03/6a030b860000000036000201'));
     await store.writeFile('_index/6a/6a030b860000000036000201/.DS_Store', 'junk');
     expect(await lookup(store, '6a030b860000000036000201')).toHaveLength(1);
+  });
+
+  // 浏览页与 planDelete 都只有 ReadStore。用 listDir 实现的话这条会编译不过，
+  // 这个测试就是防止哪天有人图省事改回去。
+  it('只用 ReadStore 的四个方法就能查', async () => {
+    await writePointer(store, p('zach', 'collected/2026-08-03/6a030b860000000036000201'));
+    const ro: ReadStore = {
+      readText: (path) => store.readText(path),
+      readFile: (path) => store.readFile(path),
+      exists: (path) => store.exists(path),
+      listEntries: (path) => store.listEntries(path),
+    };
+    const got = await lookup(ro, '6a030b860000000036000201');
+    expect(got).toHaveLength(1);
+    expect(got[0]!.collector).toBe('zach');
   });
 });
 

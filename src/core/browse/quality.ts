@@ -1,5 +1,5 @@
 import type { Pointer } from '../../types';
-import { pointerDir } from '../index-store';
+import { lookup } from '../index-store';
 import type { ReadStore } from '../read-store';
 import { noteKeyOf } from './scope';
 import type { NoteDetail, NoteRef } from './types';
@@ -17,26 +17,6 @@ export interface QualityReport {
   /** 无论指针状态如何都报，供画廊标出缺哪几张 */
   missingImages: string[];
   pointers: Pointer[];
-}
-
-/**
- * index-store.lookup 要的是完整 Store（它用 listDir），浏览页只有 ReadStore。
- * 这里用 listEntries 重读一遍，代价是十来行重复，换来浏览页彻底不碰写接口。
- */
-async function readPointers(store: ReadStore, noteId: string): Promise<Pointer[]> {
-  const dir = pointerDir(noteId);
-  const out: Pointer[] = [];
-  for (const e of await store.listEntries(dir)) {
-    if (e.kind !== 'file' || !e.name.endsWith('.json')) continue;
-    const txt = await store.readText(`${dir}/${e.name}`);
-    if (txt === null) continue;
-    try {
-      out.push(JSON.parse(txt) as Pointer);
-    } catch {
-      // 损坏的指针不该让整篇的质量判定失败
-    }
-  }
-  return out;
 }
 
 async function missingImageFiles(
@@ -64,7 +44,7 @@ export async function checkQuality(
   detail: NoteDetail | null,
 ): Promise<QualityReport> {
   const here = noteKeyOf(ref);
-  const pointers = await readPointers(store, ref.noteId);
+  const pointers = await lookup(store, ref.noteId);
   const missingImages = detail ? await missingImageFiles(store, ref, detail) : [];
 
   const atHere = pointers.filter((p) => p.path === here);
