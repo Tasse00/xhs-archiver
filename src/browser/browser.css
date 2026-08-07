@@ -127,6 +127,32 @@ body { font-size: 13px; background: var(--paper); }
 .bw-note.warn { background: var(--warn-w); color: var(--warn); }
 .bw-note.bad { background: var(--accent-w); color: var(--accent); }
 
+/* 危险动作。红色只标它，不做常规按钮 */
+.bw-btn.danger { color: var(--accent); }
+.bw-btn.danger:hover { background: var(--accent-w); border-color: var(--accent); }
+
+.bw-del { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.bw-del.open {
+  border: 1px solid var(--accent); border-radius: 8px;
+  padding: 9px 10px; background: var(--accent-w);
+}
+.bw-del-h { margin: 0; font-size: 12px; font-weight: 600; color: var(--accent); }
+.bw-del-list { display: flex; flex-direction: column; gap: 3px; }
+.bw-del-list p {
+  margin: 0; font-size: 11.5px; word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.bw-del-acts { display: flex; gap: 6px; }
+.bw-del-acts .bw-btn { flex: 1; }
+
+/* 删完之后的提示条，让「这一篇没了」有明确的反馈 */
+.bw-toast {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 12px; border-bottom: 1px solid var(--line);
+  background: var(--ok-w); color: var(--ok); font-size: 12px;
+}
+.bw-toast .bw-btn { margin-left: auto; }
+
 /* ── 评论 ─────────────────────────────────────────────── */
 .bw-comments {
   margin: 14px -12px -10px; border-top: 1px solid var(--line);

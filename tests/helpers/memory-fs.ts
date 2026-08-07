@@ -34,7 +34,18 @@ export class MemDir {
       // 自造的鸭子对象在类型和行为上都对不上。
       async getFile() {
         const f = self.children.get(name) as MemFile;
-        return new File([f.data as BlobPart], name);
+        const file = new File([f.data as BlobPart], name);
+        // jsdom 的 File 没实现 text()/arrayBuffer()（Node 环境下有）。
+        // 字节本来就在手上，用已知内容直接补，不必依赖平台的 Blob 读取能力。
+        if (typeof file.text !== 'function') {
+          (file as unknown as { text(): Promise<string> }).text =
+            async () => new TextDecoder().decode(f.data);
+        }
+        if (typeof file.arrayBuffer !== 'function') {
+          (file as unknown as { arrayBuffer(): Promise<ArrayBuffer> }).arrayBuffer =
+            async () => f.data.slice().buffer;
+        }
+        return file;
       },
       async createWritable() {
         const chunks: Uint8Array[] = [];
