@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { collectRefs, compareByDefault, compareByMeta, noteKeyOf } from '../../../src/core/browse/scope';
+import { collectRefs, compareByDefault, compareByMeta, dropNote, noteKeyOf } from '../../../src/core/browse/scope';
 import type { DatasetNode, RowMeta } from '../../../src/core/browse/types';
 
 const A = '6a61e639000000001c00e6d9';
@@ -9,6 +9,13 @@ function leaf(path: string, noteIds: string[]): DatasetNode {
   return {
     path, name: path.split('/').pop()!, isDataset: true,
     count: noteIds.length, noteIds, ignoredDirs: [], children: [],
+  };
+}
+
+function branch(path: string, children: DatasetNode[]): DatasetNode {
+  return {
+    path, name: path.slice(path.lastIndexOf('/') + 1), isDataset: false,
+    count: children.reduce((a, c) => a + c.count, 0), noteIds: [], ignoredDirs: [], children,
   };
 }
 
@@ -109,5 +116,50 @@ describe('compareByMeta', () => {
   it('两个都是 null 时回落到 noteId', () => {
     expect(compareByMeta('authorFans', meta({ noteId: A, authorFans: null }), meta({ noteId: B, authorFans: null })))
       .toBeLessThan(0);
+  });
+});
+
+describe('dropNote', () => {
+  it('从叶子里摘掉并把计数减一', () => {
+    const tree = [branch('collected', [leaf('collected/2026-08-03', ['a', 'b'])])];
+    const next = dropNote(tree, 'a');
+    expect(next[0]!.count).toBe(1);
+    expect(next[0]!.children[0]!.noteIds).toEqual(['b']);
+    expect(next[0]!.children[0]!.count).toBe(1);
+  });
+
+  // 删除按 note_id 清全部痕迹，同一篇可能同时存在于几个数据集目录
+  it('同一篇存在于多个数据集时全部摘掉', () => {
+    const tree = [
+      branch('collected', [leaf('collected/2026-08-03', ['a', 'b'])]),
+      branch('alice', [leaf('alice/2026-08-01', ['a'])]),
+    ];
+    const next = dropNote(tree, 'a');
+    expect(next).toHaveLength(1);
+    expect(next[0]!.path).toBe('collected');
+    expect(next[0]!.count).toBe(1);
+  });
+
+  // 与 buildTree 一致：空掉的节点不显示，也与磁盘上「父目录变空就删」对得上
+  it('叶子空了就连同变空的父节点一起消失', () => {
+    const tree = [branch('collected', [leaf('collected/2026-08-03', ['a'])])];
+    expect(dropNote(tree, 'a')).toEqual([]);
+  });
+
+  it('父节点还有别的孩子就留下', () => {
+    const tree = [branch('collected', [
+      leaf('collected/2026-08-03', ['a']),
+      leaf('collected/2026-08-04', ['b']),
+    ])];
+    const next = dropNote(tree, 'a');
+    expect(next[0]!.children.map((c) => c.path)).toEqual(['collected/2026-08-04']);
+    expect(next[0]!.count).toBe(1);
+  });
+
+  it('树里没有这篇时原样返回', () => {
+    const tree = [branch('collected', [leaf('collected/2026-08-03', ['a'])])];
+    const next = dropNote(tree, 'zzz');
+    expect(next[0]!.children[0]!.noteIds).toEqual(['a']);
+    expect(next[0]!.count).toBe(1);
   });
 });

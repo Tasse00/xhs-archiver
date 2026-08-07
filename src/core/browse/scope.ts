@@ -50,3 +50,27 @@ export function compareByMeta(key: SortKey, a: RowMeta, b: RowMeta): number {
   // 相等时回落到 noteId：否则同值行在每次重排后位置乱跳
   return r !== 0 ? r : a.noteId < b.noteId ? -1 : a.noteId > b.noteId ? 1 : 0;
 }
+
+/**
+ * 从树里摘掉一篇笔记，返回新树。删除按 note_id 清全部痕迹，所以同一篇可能
+ * 同时挂在几个数据集目录下，要全摘掉。
+ *
+ * 空掉的叶子与因此没了孩子的中间节点一并消失：buildTree 本来就不显示没有任何
+ * 后代数据集的中间目录，磁盘上那个变空的目录也会被 deleteNote 删掉，树上留着
+ * 一个 0 的节点等于显示一个已经不存在的目录。
+ */
+export function dropNote(nodes: DatasetNode[], noteId: string): DatasetNode[] {
+  const out: DatasetNode[] = [];
+  for (const n of nodes) {
+    if (n.isDataset) {
+      const noteIds = n.noteIds.filter((id) => id !== noteId);
+      if (noteIds.length === 0) continue;
+      out.push({ ...n, noteIds, count: noteIds.length });
+      continue;
+    }
+    const children = dropNote(n.children, noteId);
+    if (children.length === 0) continue;
+    out.push({ ...n, children, count: children.reduce((a, c) => a + c.count, 0) });
+  }
+  return out;
+}
