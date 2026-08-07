@@ -14,13 +14,3 @@ export interface ReadStore {
   exists(path: string): Promise<boolean>;
   listEntries(path: string): Promise<DirEntry[]>;
 }
-
-/** 从一个完整 Store 里摘出只读面。摘而不是直接传，是为了让写方法在运行时也不可达。 */
-export function toReadStore(s: ReadStore): ReadStore {
-  return {
-    readText: (p) => s.readText(p),
-    readFile: (p) => s.readFile(p),
-    exists: (p) => s.exists(p),
-    listEntries: (p) => s.listEntries(p),
-  };
-}

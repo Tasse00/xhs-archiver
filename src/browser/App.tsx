@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { toReadStore, type ReadStore } from '../core/read-store';
 import type { Store } from '../core/store';
 import { noteKeyOf } from '../core/browse/scope';
 import { scanScope } from '../core/browse/scan';
@@ -16,12 +15,13 @@ import { useRows } from './hooks/useRows';
 import { useThumbnail } from './hooks/useThumbnail';
 
 export function App() {
-  const [store, setStore] = useState<ReadStore | null>(null);
+  const [store, setStore] = useState<Store | null>(null);
   const [rootName, setRootName] = useState('');
 
-  // 只把只读面往下传。传完整 Store 的话，「浏览页不写盘」就只剩口头承诺
+  // 浏览页是管理中心，要能删数据，所以留完整 Store。core/browse/* 仍然只收
+  // ReadStore——那些模块确实不写盘，放宽只会白丢一层免费的保证。
   const onReady = useCallback((s: Store, name: string) => {
-    setStore(toReadStore(s));
+    setStore(s);
     setRootName(name);
   }, []);
 

@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createStore, type Store } from '../../src/core/store';
-import { toReadStore } from '../../src/core/read-store';
 import { memRoot } from '../helpers/memory-fs';
 
 let store: Store;
@@ -42,20 +41,5 @@ describe('readFile', () => {
   it('路径指向目录时返回 null', async () => {
     await store.writeFile('d/x.json', 'x');
     expect(await store.readFile('d')).toBeNull();
-  });
-});
-
-describe('toReadStore', () => {
-  it('只暴露四个读方法，写方法不可达', () => {
-    // 这个测试的意义就是探测 ReadStore 类型里没有的写方法，转换必须经 unknown。
-    const ro = toReadStore(store) as unknown as Record<string, unknown>;
-    expect(Object.keys(ro).sort()).toEqual(['exists', 'listEntries', 'readFile', 'readText']);
-    expect(ro.writeFile).toBeUndefined();
-    expect(ro.removeDir).toBeUndefined();
-  });
-
-  it('转发读操作', async () => {
-    await store.writeFile('a/b.json', 'hi');
-    expect(await toReadStore(store).readText('a/b.json')).toBe('hi');
   });
 });
