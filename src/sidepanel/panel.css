@@ -172,6 +172,20 @@
 .empty .field { width: 100%; margin-top: 12px; text-align: left; }
 .empty .hint { margin-top: 10px; }
 
+/* 快捷路径。挨着输入框放，点完看得见它填了什么 */
+.presets { width: 100%; margin-top: 8px; text-align: left; }
+.presets-label { font-size: 10.5px; color: var(--ink-3); letter-spacing: .04em; }
+.presets-row { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
+.preset {
+  padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line-2);
+  background: var(--surface); color: var(--ink-2);
+  font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.preset:hover { border-color: var(--ink-3); color: var(--ink); }
+.preset[aria-pressed='true'] {
+  background: var(--sunk); border-color: var(--ink-3); color: var(--ink);
+}
+
 /* 让人在按下确认前看到完整的落盘路径长什么样 */
 .path-preview {
   width: 100%; margin-top: 6px; padding: 6px 8px; border-radius: 6px;

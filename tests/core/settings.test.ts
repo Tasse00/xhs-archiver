@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   isValidSegment, isValidDatasetPath, randomCollectorId,
-  defaultDatasetPath, loadSettings, saveSettings, type SettingsArea,
+  defaultDatasetPath, datasetPathPresets, loadSettings, saveSettings, type SettingsArea,
 } from '../../src/core/settings';
+import { todayBeijing } from '../../src/core/time';
 
 function fakeArea(): SettingsArea & { data: Record<string, unknown> } {
   const data: Record<string, unknown> = {};
@@ -125,5 +126,44 @@ describe('loadSettings / saveSettings', () => {
     const s = await loadSettings(area);
     expect(s.captureAuthor).toBe(false);
     expect(s.captureShare).toBe(true);
+  });
+});
+
+describe('datasetPathPresets', () => {
+  it('给出四个预设：仓库默认、按日期、按采集者、采集者按日期', () => {
+    expect(datasetPathPresets('zach', '2026-08-07')).toEqual([
+      'collected',
+      'collected/2026-08-07',
+      'zach',
+      'zach/2026-08-07',
+    ]);
+  });
+
+  // 首次设置路径时采集者 ID 已经定下来了，但组件层拿到的类型是 string | null，
+  // 不能因为一个空值就整排快捷选项都不出来。
+  it('没有采集者时只给不依赖采集者的两个', () => {
+    expect(datasetPathPresets(null, '2026-08-07')).toEqual([
+      'collected',
+      'collected/2026-08-07',
+    ]);
+  });
+
+  // 采集者 ID 在保存时校验过，但 storage 里可能存着更早版本写进去的值。
+  // 拼出一个存不下去的路径，等于给人一个点了就报错的按钮。
+  it('采集者 ID 不合法时不拿它拼路径', () => {
+    expect(datasetPathPresets('张三', '2026-08-07')).toEqual([
+      'collected',
+      'collected/2026-08-07',
+    ]);
+  });
+
+  it('每个预设都是合法的写入路径', () => {
+    for (const p of datasetPathPresets('zach')) {
+      expect(isValidDatasetPath(p)).toBe(true);
+    }
+  });
+
+  it('日期缺省取北京时区的今天', () => {
+    expect(datasetPathPresets('zach')).toContain(`collected/${todayBeijing()}`);
   });
 });
