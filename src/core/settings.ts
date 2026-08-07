@@ -1,3 +1,5 @@
+import { todayBeijing } from './time';
+
 /**
  * 目录名强制 ASCII：macOS 用 NFD 保存中文文件名，
  * 进 Git 后在其他平台会显示为乱码或被识别成不同路径。
@@ -43,6 +45,30 @@ export function randomCollectorId(): string {
  */
 export function defaultDatasetPath(): string {
   return 'collected';
+}
+
+/**
+ * 设置页里给出的几条常用写入路径。让人手打 `collected/2026-08-07` 既慢又容易
+ * 打错一个字符就被校验拦下，而按日期、按采集者分目录几乎是全部的实际用法。
+ *
+ * 只是替使用者把输入框填好，不代表推荐——尤其带采集者的那两条：仓库里一篇笔记
+ * 只有一份，归属记在指针文件名里（见 defaultDatasetPath），按采集者分目录在
+ * 多人协作的仓库里会让同一篇笔记的位置取决于谁先采到。个人独用时才顺手。
+ *
+ * today 可注入，测试里才不用跟着系统时钟跑。
+ */
+export function datasetPathPresets(
+  collector: string | null,
+  today: string = todayBeijing(),
+): string[] {
+  const base = defaultDatasetPath();
+  const presets = [base, `${base}/${today}`];
+  // 旧版本存进 storage 的 collector 未必过得了今天的校验，
+  // 不挡一下就会给出一个点了必然保存失败的按钮。
+  if (collector !== null && isValidSegment(collector)) {
+    presets.push(collector, `${collector}/${today}`);
+  }
+  return presets;
 }
 
 const KEYS = ['collector', 'datasetPath', 'captureAuthor', 'captureShare'];

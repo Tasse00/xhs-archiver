@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { isValidDatasetPath, isValidSegment, randomCollectorId } from '../../core/settings';
+import {
+  datasetPathPresets, isValidDatasetPath, isValidSegment, randomCollectorId,
+} from '../../core/settings';
 import { Empty } from './Empty';
 import { IconFolder, IconGear, IconId, IconPath } from './Icons';
 
@@ -111,16 +113,20 @@ export function CollectorSetup({
  * 路径决定了仓库的组织方式，必须在采第一篇之前摆到眼前一次。
  */
 export function PathSetup({
-  initial, rootName, onSave, onCancel,
+  initial, rootName, collector, onSave, onCancel,
 }: {
   initial: string;
   rootName: string | null;
+  /** 用来拼「按采集者分目录」那两个快捷选项。 */
+  collector: string | null;
   onSave(v: string): void;
   onCancel?(): void;
 }) {
   const [value, setValue] = useState(initial);
   const valid = isValidDatasetPath(value);
   const editing = onCancel !== undefined;
+  // 每次渲染重算：面板可能开着跨过零点，缓存住的日期会比页面上显示的还旧。
+  const presets = datasetPathPresets(collector);
   return (
     <div className="pt-body">
       <div className="empty">
@@ -142,6 +148,24 @@ export function PathSetup({
             onChange={(e) => setValue(e.target.value)}
           />
         </label>
+        {/* 只填输入框、不直接保存：路径决定仓库怎么组织，
+            点一下就落盘等于把「确认」这一步从流程里抽掉。 */}
+        <div className="presets">
+          <span className="presets-label">快捷选项</span>
+          <div className="presets-row">
+            {presets.map((p) => (
+              <button
+                key={p}
+                type="button"
+                className="preset"
+                aria-pressed={p === value}
+                onClick={() => setValue(p)}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        </div>
         {valid ? (
           <div className="path-preview mono">{rootName ?? '<数据仓库>'}/{value}/{'{笔记ID}'}/</div>
         ) : (
