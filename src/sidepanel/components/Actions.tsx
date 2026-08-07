@@ -1,4 +1,5 @@
 import type { Pointer } from '../../types';
+import type { DeletePlan } from '../../core/delete';
 import { dirOf } from './Record';
 import { isValidDatasetPath } from '../../core/settings';
 
@@ -71,6 +72,53 @@ export function ArchiveActions({
           </button>
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * 删除入口。确认块内联展开而不是弹 modal——侧边栏窄，modal 在这里不好使；
+ * 而 window.confirm 显示不了清单，清单恰恰是这个确认框存在的理由：删除按
+ * note_id 清全部痕迹，可能连带删掉别处那一份，这件事必须在按下去之前看见。
+ *
+ * 计划由上层现算（要读盘），所以 plan 为 null 就表示还没打开。
+ */
+export function DeleteAction({
+  plan, busy, onOpen, onCancel, onConfirm,
+}: {
+  plan: DeletePlan | null;
+  busy: boolean;
+  onOpen(): void;
+  onCancel(): void;
+  onConfirm(): void;
+}) {
+  // 用 !plan 而不是 plan === null：vitest 不做类型检查，既有测试渲染 NoteView
+  // 时漏传这个 prop 就会传进 undefined，严格比 null 会让它一头撞进下面的 plan.dirs
+  if (!plan) {
+    return (
+      <button className="btn btn-sm btn-danger" disabled={busy} onClick={onOpen}>
+        删除这篇
+      </button>
+    );
+  }
+
+  return (
+    <div className="del-confirm">
+      <div className="del-h">删除后不可撤销，恢复只能靠 git</div>
+      <div className="del-list">
+        {plan.dirs.length === 0 ? (
+          <p className="hint">没有数据目录，只清理索引指针</p>
+        ) : (
+          plan.dirs.map((d) => <p className="mono" key={d}>{d}/</p>)
+        )}
+        {plan.pointers.length > 0 && (
+          <p className="hint">索引指针：{plan.pointers.map((p) => p.collector).join('、')}</p>
+        )}
+      </div>
+      <div className="del-acts">
+        <button className="btn btn-sm" onClick={onCancel}>取消</button>
+        <button className="btn btn-sm btn-danger" disabled={busy} onClick={onConfirm}>确认删除</button>
+      </div>
     </div>
   );
 }
