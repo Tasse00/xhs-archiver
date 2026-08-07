@@ -564,6 +564,7 @@ export function App() {
         <PathSetup
           initial={datasetPath}
           rootName={rootName}
+          collector={collector}
           onSave={(value) => void savePath(value)}
           onCancel={() => setEditingPath(false)}
         />
@@ -583,6 +584,7 @@ export function App() {
         <PathSetup
           initial={datasetPath}
           rootName={rootName}
+          collector={collector}
           onSave={(value) => void savePath(value)}
         />
       ) : (

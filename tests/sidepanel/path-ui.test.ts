@@ -7,6 +7,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { PathDisplay } from '../../src/sidepanel/components/Actions';
 import { NoteView } from '../../src/sidepanel/components/NoteView';
 import { PathSetup } from '../../src/sidepanel/components/Setup';
+import { todayBeijing } from '../../src/core/time';
 
 afterEach(cleanup);
 
@@ -48,6 +49,7 @@ describe('PathSetup', () => {
     const html = renderToStaticMarkup(createElement(PathSetup, {
       initial: 'collected',
       rootName: '笔记仓库',
+      collector: 'zach',
       onSave: vi.fn(),
     }));
 
@@ -63,6 +65,7 @@ describe('PathSetup', () => {
     const html = renderToStaticMarkup(createElement(PathSetup, {
       initial: 'collected/2026-08-04',
       rootName: '笔记仓库',
+      collector: 'zach',
       onSave: vi.fn(),
       onCancel: vi.fn(),
     }));
@@ -75,7 +78,7 @@ describe('PathSetup', () => {
   it('保存时才提交编辑后的草稿', () => {
     const onSave = vi.fn();
     render(createElement(PathSetup, {
-      initial: 'collected', rootName: '笔记仓库', onSave, onCancel: vi.fn(),
+      initial: 'collected', rootName: '笔记仓库', collector: 'zach', onSave, onCancel: vi.fn(),
     }));
 
     fireEvent.change(screen.getByLabelText('写入路径'), {
@@ -90,7 +93,7 @@ describe('PathSetup', () => {
     const onSave = vi.fn();
     const onCancel = vi.fn();
     render(createElement(PathSetup, {
-      initial: 'collected', rootName: '笔记仓库', onSave, onCancel,
+      initial: 'collected', rootName: '笔记仓库', collector: 'zach', onSave, onCancel,
     }));
 
     fireEvent.change(screen.getByLabelText('写入路径'), {
@@ -102,10 +105,67 @@ describe('PathSetup', () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
+  // 快捷选项只填输入框、不直接保存：路径决定仓库怎么组织，
+  // 点一下就落盘等于把「确认」这一步从流程里抽掉。
+  it('列出四个快捷选项', () => {
+    const html = renderToStaticMarkup(createElement(PathSetup, {
+      initial: 'collected',
+      rootName: '笔记仓库',
+      collector: 'zach',
+      onSave: vi.fn(),
+    }));
+
+    expect(html).toContain('快捷选项');
+    for (const p of ['collected', `collected/${todayBeijing()}`, 'zach', `zach/${todayBeijing()}`]) {
+      expect(html).toContain(p);
+    }
+  });
+
+  it('点快捷选项只填进输入框，要再点保存才提交', () => {
+    const onSave = vi.fn();
+    render(createElement(PathSetup, {
+      initial: 'collected', rootName: '笔记仓库', collector: 'zach', onSave, onCancel: vi.fn(),
+    }));
+
+    fireEvent.click(screen.getByRole('button', { name: `zach/${todayBeijing()}` }));
+
+    expect((screen.getByLabelText('写入路径') as HTMLInputElement).value)
+      .toBe(`zach/${todayBeijing()}`);
+    expect(onSave).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+    expect(onSave).toHaveBeenCalledWith(`zach/${todayBeijing()}`);
+  });
+
+  it('当前路径命中的那个快捷选项被标记为已选中', () => {
+    render(createElement(PathSetup, {
+      initial: 'collected', rootName: '笔记仓库', collector: 'zach', onSave: vi.fn(),
+    }));
+
+    expect(screen.getByRole('button', { name: 'collected' }).getAttribute('aria-pressed'))
+      .toBe('true');
+    expect(screen.getByRole('button', { name: 'zach' }).getAttribute('aria-pressed'))
+      .toBe('false');
+
+    fireEvent.click(screen.getByRole('button', { name: 'zach' }));
+
+    expect(screen.getByRole('button', { name: 'zach' }).getAttribute('aria-pressed'))
+      .toBe('true');
+  });
+
+  it('没有采集者时不出带采集者的那两个选项', () => {
+    render(createElement(PathSetup, {
+      initial: 'collected', rootName: '笔记仓库', collector: null, onSave: vi.fn(),
+    }));
+
+    expect(screen.getAllByRole('button', { name: /^collected/ })).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: 'zach' })).toBeNull();
+  });
+
   it('非法路径不能保存且错误与输入框关联', () => {
     const onSave = vi.fn();
     render(createElement(PathSetup, {
-      initial: 'collected', rootName: '笔记仓库', onSave, onCancel: vi.fn(),
+      initial: 'collected', rootName: '笔记仓库', collector: 'zach', onSave, onCancel: vi.fn(),
     }));
 
     const input = screen.getByLabelText('写入路径');
