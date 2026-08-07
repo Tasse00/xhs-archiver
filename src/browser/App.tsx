@@ -98,17 +98,14 @@ export function App() {
 
   useEffect(() => { localStorage.setItem('bw.paneWidth', String(paneWidth)); }, [paneWidth]);
 
-  // ↑↓ 换行、Enter 开详情。Esc 归看图器，理由见 keys.ts
+  // Enter 开详情。Esc 与 ↑↓ 都归看图器，理由见 keys.ts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const action = browseKeyAction(e.key);
-      if (action === 'next') { e.preventDefault(); setCursor((c) => Math.min(refs.length - 1, c + 1)); }
-      if (action === 'prev') { e.preventDefault(); setCursor((c) => Math.max(0, c - 1)); }
-      if (action === 'open-detail') setDetailOpen(true);
+      if (browseKeyAction(e.key) === 'open-detail') setDetailOpen(true);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [refs.length]);
+  }, []);
 
   const current = refs[cursor];
   const currentKey = current ? noteKeyOf(current) : null;

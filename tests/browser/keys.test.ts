@@ -2,9 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { browseKeyAction } from '../../src/browser/keys';
 
 describe('browseKeyAction', () => {
-  it('↑↓ 换行、Enter 开详情', () => {
-    expect(browseKeyAction('ArrowDown')).toBe('next');
-    expect(browseKeyAction('ArrowUp')).toBe('prev');
+  it('Enter 开详情', () => {
     expect(browseKeyAction('Enter')).toBe('open-detail');
   });
 
@@ -12,6 +10,13 @@ describe('browseKeyAction', () => {
   // 结果是关一张图连详情栏一起关掉
   it('Esc 不做任何事', () => {
     expect(browseKeyAction('Escape')).toBeNull();
+  });
+
+  // ↑↓ 也归看图器（← → 翻图之外它不用，但换行会换掉整篇笔记，
+  // 正在看的图当场消失）。换行改用鼠标点行
+  it('↑↓ 不做任何事', () => {
+    expect(browseKeyAction('ArrowDown')).toBeNull();
+    expect(browseKeyAction('ArrowUp')).toBeNull();
   });
 
   it('其它键不做任何事', () => {
