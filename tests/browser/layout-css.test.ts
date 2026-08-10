@@ -6,9 +6,9 @@ const css = readFileSync(fileURLToPath(new URL('../../src/browser/browser.css', 
 
 /** 取出某个选择器的声明块。只有精确匹配的单选择器规则，够用且不必引 CSS parser。 */
 function ruleOf(selector: string): string {
-  const m = css.match(new RegExp(`(^|\\n)\\s*${selector.replace('.', '\\.')}\\s*\\{([^}]*)\\}`));
-  if (m === null) throw new Error(`browser.css 里找不到 ${selector} 的规则`);
-  return m[2];
+  const body = css.match(new RegExp(`(^|\\n)\\s*${selector.replace('.', '\\.')}\\s*\\{([^}]*)\\}`))?.[2];
+  if (body === undefined) throw new Error(`browser.css 里找不到 ${selector} 的规则`);
+  return body;
 }
 
 /*

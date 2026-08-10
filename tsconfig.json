@@ -9,7 +9,7 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
-    "types": ["chrome", "vite/client"]
+    "types": ["chrome", "vite/client", "node"]
   },
   "include": ["src", "tests", "*.ts"]
 }
