@@ -57,7 +57,14 @@ body { font-size: 13px; background: var(--paper); }
 .bw-empty { color: var(--ink-3); padding: 16px; }
 
 /* ── 表格 ─────────────────────────────────────────────── */
-.bw-table { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+/*
+ * min-height: 0 不能省。.bw-table 是 .bw-list 这个 column flex 里的伸缩项，主轴上
+ * min-height 的默认值 auto 会解析成内容的最小尺寸——而内容里正是虚拟列表那个
+ * refs.length * 44px 的占位块。少了这一行，.bw-table 被撑到内容高度、被 .bw-list 的
+ * overflow: hidden 裁掉，.bw-scroll 拿到的高度等于它自己的内容高度，永远不溢出，
+ * 于是列表滚不动、页脚也被顶出视口。行数不足一屏时看不出来。
+ */
+.bw-table { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 
 .bw-head, .bw-row {
   display: flex; align-items: center; gap: 8px; padding: 0 10px;
