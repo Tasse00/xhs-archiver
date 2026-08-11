@@ -1,6 +1,6 @@
 {
   "name": "xhs_archiver",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "一个 MV3 Chrome 扩展。在小红书图文笔记页点击侧边栏按钮，即把该笔记的正文、标题、话题标签、互动数据、作者信息与全部图片，结构化归档到本地的 Git 数据仓库。",
   "main": "index.js",
   "directories": {
