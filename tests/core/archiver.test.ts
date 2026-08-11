@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createStore, type Store } from '../../src/core/store';
 import { memRoot } from '../helpers/memory-fs';
 import { checkNote, archive } from '../../src/core/archiver';
+import { ANNOTATION_FILE, readArticleNote } from '../../src/core/article-note';
 import { writePointer, lookup } from '../../src/core/index-store';
 import { extract } from '../../src/core/extractor';
 import type { Deps } from '../../src/core/downloader';
@@ -11,6 +12,7 @@ import imageNote from '../fixtures/note-image.json';
 import rawComments from '../fixtures/note-comments.json';
 
 const NOTE_ID = '6a030b860000000036000201';
+const annotationAt = (path: string) => `${path}/${ANNOTATION_FILE}`;
 
 function goodNote(): ExtractedNote {
   const r = extract(imageNote as unknown as RawNote);
@@ -386,5 +388,152 @@ describe('archive - 接管他人的采集', () => {
     });
 
     expect(await lookup(store, NOTE_ID)).toHaveLength(1);
+  });
+});
+
+describe('archive - 文章 Note', () => {
+  it('首次采集写入 Note，空 Note 清理失败重试留下的文件', async () => {
+    const dir = `collected/${NOTE_ID}`;
+    await archive({
+      store, note: goodNote(), collector: 'zach', datasetPath: 'collected',
+      mode: 'new', noteText: '判断一\r\n判断二', deps: okDeps(),
+    });
+    expect(await store.readText(annotationAt(dir))).toBe('判断一\n判断二\n');
+
+    await store.removeDir('_index');
+    await archive({
+      store, note: goodNote(), collector: 'zach', datasetPath: 'collected',
+      mode: 'new', noteText: '', deps: okDeps(),
+    });
+    expect(await store.exists(annotationAt(dir))).toBe(false);
+  });
+
+  it('原位更新 undefined 保留、字符串替换、空字符串清空', async () => {
+    const path = `collected/${NOTE_ID}`;
+    await archive({
+      store, note: goodNote(), collector: 'zach', datasetPath: 'collected',
+      mode: 'new', noteText: '旧内容', deps: okDeps(),
+    });
+    const existing = (await lookup(store, NOTE_ID))[0]!;
+
+    await archive({ store, note: goodNote(), collector: 'zach', datasetPath: 'elsewhere', mode: 'update', existing, deps: okDeps() });
+    expect(await readArticleNote(store, path)).toBe('旧内容');
+
+    await archive({ store, note: goodNote(), collector: 'zach', datasetPath: 'elsewhere', mode: 'update', existing, noteText: '新内容', deps: okDeps() });
+    expect(await readArticleNote(store, path)).toBe('新内容');
+
+    await archive({ store, note: goodNote(), collector: 'zach', datasetPath: 'elsewhere', mode: 'update', existing, noteText: '', deps: okDeps() });
+    expect(await store.exists(annotationAt(path))).toBe(false);
+  });
+
+  it('接管原位更新默认继承文章 Note', async () => {
+    await archive({
+      store, note: goodNote(), collector: 'lily', datasetPath: 'collected',
+      mode: 'new', noteText: '公共判断', deps: okDeps(),
+    });
+    const existing = (await lookup(store, NOTE_ID))[0]!;
+    await archive({
+      store, note: goodNote(), collector: 'zach', datasetPath: 'other', mode: 'update',
+      existing, supersede: [existing], deps: okDeps(),
+    });
+    expect(await readArticleNote(store, existing.path)).toBe('公共判断');
+  });
+
+  it('迁移默认复制旧 Note，主动编辑时采用新内容', async () => {
+    await archive({
+      store, note: goodNote(), collector: 'zach', datasetPath: 'old',
+      mode: 'new', noteText: '旧内容', deps: okDeps(),
+    });
+    let existing = (await lookup(store, NOTE_ID))[0]!;
+    await archive({
+      store, note: goodNote(), collector: 'zach', datasetPath: 'next',
+      mode: 'migrate', existing, deps: okDeps(),
+    });
+    expect(await readArticleNote(store, `next/${NOTE_ID}`)).toBe('旧内容');
+
+    existing = (await lookup(store, NOTE_ID))[0]!;
+    await archive({
+      store, note: goodNote(), collector: 'zach', datasetPath: 'final',
+      mode: 'migrate', existing, noteText: '迁移时修改', deps: okDeps(),
+    });
+    expect(await readArticleNote(store, `final/${NOTE_ID}`)).toBe('迁移时修改');
+  });
+
+  it('首次 Note 写入失败时不写指针', async () => {
+    const broken: Store = {
+      ...store,
+      writeFile: async (path, data) => {
+        if (path.endsWith(ANNOTATION_FILE)) throw new Error('annotation boom');
+        await store.writeFile(path, data);
+      },
+    };
+    await expect(archive({
+      store: broken, note: goodNote(), collector: 'zach', datasetPath: 'collected',
+      mode: 'new', noteText: '不能丢', deps: okDeps(),
+    })).rejects.toThrow('Note 未保存，索引未写入');
+    expect(await lookup(store, NOTE_ID)).toEqual([]);
+  });
+
+  it('原位更新 Note 写入失败时旧指针和旧 Note 保留', async () => {
+    await archive({
+      store, note: goodNote(), collector: 'zach', datasetPath: 'collected',
+      mode: 'new', noteText: '旧内容', deps: okDeps(),
+    });
+    const existing = (await lookup(store, NOTE_ID))[0]!;
+    const broken: Store = {
+      ...store,
+      writeFile: async (path, data) => {
+        if (path.endsWith(ANNOTATION_FILE)) throw new Error('annotation boom');
+        await store.writeFile(path, data);
+      },
+    };
+    await expect(archive({
+      store: broken, note: goodNote(), collector: 'zach', datasetPath: 'elsewhere',
+      mode: 'update', existing, noteText: '新内容', deps: okDeps(),
+    })).rejects.toThrow('文章数据可能已更新，原索引仍保留');
+    expect((await lookup(store, NOTE_ID))[0]!.path).toBe(existing.path);
+    expect(await readArticleNote(store, existing.path)).toBe('旧内容');
+  });
+
+  it('迁移读取旧 Note 失败时不写新目录、不移动指针', async () => {
+    await archive({
+      store, note: goodNote(), collector: 'zach', datasetPath: 'old',
+      mode: 'new', noteText: '旧内容', deps: okDeps(),
+    });
+    const existing = (await lookup(store, NOTE_ID))[0]!;
+    const broken: Store = {
+      ...store,
+      readText: async (path) => {
+        if (path.endsWith(ANNOTATION_FILE)) throw new Error('read boom');
+        return store.readText(path);
+      },
+    };
+    await expect(archive({
+      store: broken, note: goodNote(), collector: 'zach', datasetPath: 'next',
+      mode: 'migrate', existing, deps: okDeps(),
+    })).rejects.toThrow('Note 读取失败，旧目录保留');
+    expect(await store.exists(`next/${NOTE_ID}/note.json`)).toBe(false);
+    expect((await lookup(store, NOTE_ID))[0]!.path).toBe(existing.path);
+  });
+
+  it('迁移 Note 失败时旧目录和旧指针保留', async () => {
+    await archive({
+      store, note: goodNote(), collector: 'zach', datasetPath: 'old',
+      mode: 'new', noteText: '必须保留', deps: okDeps(),
+    });
+    const existing = (await lookup(store, NOTE_ID))[0]!;
+    const broken: Store = {
+      ...store,
+      writeFile: async (path, data) => {
+        if (path === `next/${NOTE_ID}/${ANNOTATION_FILE}`) throw new Error('annotation boom');
+        await store.writeFile(path, data);
+      },
+    };
+    await expect(archive({
+      store: broken, note: goodNote(), collector: 'zach', datasetPath: 'next',
+      mode: 'migrate', existing, deps: okDeps(),
+    })).rejects.toThrow('Note 未保存');
+    expect(await readArticleNote(store, existing.path)).toBe('必须保留');
+    expect((await lookup(store, NOTE_ID))[0]!.path).toBe(existing.path);
   });
 });

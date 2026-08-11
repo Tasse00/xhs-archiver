@@ -11,6 +11,7 @@ import type {
   Pointer,
 } from '../types';
 import type { Store } from './store';
+import { readArticleNote, writeArticleNote } from './article-note';
 import { removeEmptyParent } from './delete';
 import {
   downloadCommentImage,
@@ -33,6 +34,8 @@ export interface ArchiveOptions {
   note: ExtractedNote;
   /** 页面上已加载的评论。读不到就不传，此时不写 comments.json。 */
   comments?: ExtractedComments;
+  /** undefined = 保留；字符串 = 替换；空白字符串 = 清空。 */
+  noteText?: string;
   collector: string;
   datasetPath: string;
   mode: 'new' | 'update' | 'migrate';
@@ -53,6 +56,23 @@ export interface ArchiveResult {
   failures: string[];
   /** 评论配图取不到的原因。不影响 status——评论是附属数据。 */
   commentImageFailures: string[];
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function noteTextForArchive(opts: ArchiveOptions, targetPath: string): Promise<string | undefined> {
+  if (opts.noteText !== undefined) return opts.noteText;
+  if (opts.mode === 'new') return '';
+  if (opts.mode === 'migrate' && opts.existing && opts.existing.path !== targetPath) {
+    try {
+      return await readArticleNote(opts.store, opts.existing.path);
+    } catch (error) {
+      throw new Error(`Note 读取失败，旧目录保留：${errorText(error)}`);
+    }
+  }
+  return undefined;
 }
 
 export async function checkNote(store: Store, noteId: string, collector: string): Promise<CheckResult> {
@@ -77,6 +97,7 @@ export async function archive(opts: ArchiveOptions): Promise<ArchiveResult> {
   const { store, note, comments, collector, mode, existing } = opts;
   const deps = opts.deps ?? defaultDeps;
   const targetPath = mode === 'update' && existing ? existing.path : `${opts.datasetPath}/${note.noteId}`;
+  const effectiveNoteText = await noteTextForArchive(opts, targetPath);
 
   const commentImages = comments ? flattenCommentImages(comments) : [];
   const total = note.images.length + commentImages.length;
@@ -181,7 +202,20 @@ export async function archive(opts: ArchiveOptions): Promise<ArchiveResult> {
     }
   }
 
-  // 5. 写指针（数据已完整）
+  // 5. Note 先于指针、接管旧指针删除和迁移旧目录删除落盘。
+  if (effectiveNoteText !== undefined) {
+    try {
+      await writeArticleNote(store, targetPath, effectiveNoteText);
+    } catch (error) {
+      const detail = errorText(error);
+      if (existing) {
+        throw new Error(`Note 未保存；文章数据可能已更新，原索引仍保留：${detail}`);
+      }
+      throw new Error(`Note 未保存，索引未写入：${detail}`);
+    }
+  }
+
+  // 6. 写指针（数据已完整）
   await writePointer(store, {
     note_id: note.noteId,
     path: targetPath,
@@ -191,13 +225,13 @@ export async function archive(opts: ArchiveOptions): Promise<ArchiveResult> {
     last_archived_at: now,
   });
 
-  // 6. 接管：作废旧指针。排在写指针之后，中断最坏留下两条指针（看得出来要清理），
+  // 7. 接管：作废旧指针。排在写指针之后，中断最坏留下两条指针（看得出来要清理），
   //    而不是一条都不剩（那会让这篇凭空变回「没人采过」）。
   for (const p of opts.supersede ?? []) {
     if (p.collector !== collector) await removePointer(store, note.noteId, p.collector);
   }
 
-  // 7. 迁移：新位置确认无误后才删旧目录。
+  // 8. 迁移：新位置确认无误后才删旧目录。
   //    任何中断最坏留下孤儿目录，绝不会「删了旧的但新的没写成」。
   if (mode === 'migrate' && existing && existing.path !== targetPath) {
     await store.removeDir(existing.path);
