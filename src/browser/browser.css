@@ -136,6 +136,22 @@ body { font-size: 13px; background: var(--paper); }
 .bw-note.warn { background: var(--warn-w); color: var(--warn); }
 .bw-note.bad { background: var(--accent-w); color: var(--accent); }
 
+.bw-annotation {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+  padding: 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface);
+}
+.bw-annotation header { display: flex; width: 100%; align-items: center; }
+.bw-annotation-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.bw-annotation textarea {
+  box-sizing: border-box; width: 100%; min-height: 112px; resize: vertical;
+  padding: 8px 10px; border: 1px solid var(--line-2); border-radius: 6px;
+  background: var(--sunk); color: var(--ink); font: inherit;
+}
+.bw-annotation-actions { display: flex; align-self: flex-end; gap: 6px; }
+.bw-btn.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.bw-btn.primary:hover { opacity: .88; background: var(--ink); color: var(--paper); }
+
 /* 危险动作。红色只标它，不做常规按钮 */
 .bw-btn.danger { color: var(--accent); }
 .bw-btn.danger:hover { background: var(--accent-w); border-color: var(--accent); }

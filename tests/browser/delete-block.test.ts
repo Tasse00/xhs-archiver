@@ -102,4 +102,23 @@ describe('DeleteBlock', () => {
     await waitFor(() => expect(screen.getByText(/boom/)).toBeTruthy());
     expect(onDeleted).not.toHaveBeenCalled();
   });
+
+  it('外部写入进行中时删除入口禁用', async () => {
+    render(createElement(DeleteBlock, {
+      store: await seeded(), noteRef, disabled: true, onDeleted: vi.fn(),
+    }));
+    expect(screen.getByRole('button', { name: '删除这篇' }).hasAttribute('disabled')).toBe(true);
+  });
+
+  it('真正删除期间通知详情栏禁用 Note 写入', async () => {
+    const onBusyChange = vi.fn();
+    render(createElement(DeleteBlock, {
+      store: await seeded(), noteRef, onBusyChange, onDeleted: vi.fn(),
+    }));
+    fireEvent.click(screen.getByRole('button', { name: '删除这篇' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '确认删除' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
+    await waitFor(() => expect(onBusyChange).toHaveBeenCalledWith(true));
+    await waitFor(() => expect(onBusyChange).toHaveBeenLastCalledWith(false));
+  });
 });
