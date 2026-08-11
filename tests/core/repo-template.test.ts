@@ -40,6 +40,14 @@ describe('ensureRepoTemplates', () => {
     expect(txt).toContain('declared_total');
   });
 
+  it('README 说明 annotation.txt 是可选的文章级人工 Note', async () => {
+    await ensureRepoTemplates(store);
+    const txt = (await store.readText('README.md'))!;
+    expect(txt).toContain('annotation.txt');
+    expect(txt).toContain('文章级');
+    expect(txt).toContain('更新、接管和迁移');
+  });
+
   it('已存在的文件不被覆盖', async () => {
     await store.writeFile('README.md', '我自己写的\n');
     const created = await ensureRepoTemplates(store);
