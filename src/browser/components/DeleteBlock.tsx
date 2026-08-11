@@ -24,10 +24,12 @@ type Phase =
  * 也不用 window.confirm——它显示不了清单，而清单正是这个确认框存在的理由。
  */
 export function DeleteBlock({
-  store, noteRef, onDeleted,
+  store, noteRef, disabled = false, onBusyChange = () => undefined, onDeleted,
 }: {
   store: Store;
   noteRef: NoteRef;
+  disabled?: boolean;
+  onBusyChange?(busy: boolean): void;
   onDeleted(): void;
 }) {
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
@@ -44,6 +46,7 @@ export function DeleteBlock({
 
   async function confirm(plan: DeletePlan) {
     setPhase({ kind: 'deleting', plan });
+    onBusyChange(true);
     try {
       await deleteNote(store, plan);
     } catch (e) {
@@ -56,6 +59,8 @@ export function DeleteBlock({
       // 顺序保证了残留只会是孤儿目录，所以这句话永远成立
       setPhase({ kind: 'error', text: `删除失败：${message(e)}。索引指针可能已删除，数据目录可能有残留。` });
       return;
+    } finally {
+      onBusyChange(false);
     }
     setPhase({ kind: 'idle' });
     onDeleted();
@@ -67,7 +72,7 @@ export function DeleteBlock({
     <div className="bw-del-inline">
       <button
         className="bw-btn danger"
-        disabled={phase.kind === 'planning' || busy}
+        disabled={phase.kind === 'planning' || busy || disabled}
         onClick={() => void open()}
       >
         删除这篇
@@ -94,8 +99,8 @@ export function DeleteBlock({
             )}
           </div>
           <div className="bw-del-acts">
-            <button className="bw-btn" disabled={busy} onClick={() => setPhase({ kind: 'idle' })}>取消</button>
-            <button className="bw-btn danger" disabled={busy} onClick={() => void confirm(phase.plan)}>
+            <button className="bw-btn" onClick={() => setPhase({ kind: 'idle' })}>取消</button>
+            <button className="bw-btn danger" disabled={busy || disabled} onClick={() => void confirm(phase.plan)}>
               {busy ? '删除中…' : '确认删除'}
             </button>
           </div>

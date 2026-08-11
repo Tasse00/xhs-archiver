@@ -21,6 +21,10 @@
 - **可以删掉采错的笔记**：侧边栏与浏览页详情栏各一个「删除这篇」。按 `note_id` 清掉全部
   指针与它们指向的目录，不再需要手动去仓库里删两处。设计见
   `docs/superpowers/specs/2026-08-07-delete-archived-note-design.md`
+- **文章级人工 Note**：采集时可填多行纯文本，落在文章目录的可选 `annotation.txt`；
+  侧边栏和浏览页都能后续修改。更新、接管和迁移默认保留，主动清空才删除文件。
+  Note 当前不参与搜索、筛选和排序。设计见
+  `docs/superpowers/specs/2026-08-11-article-note-design.md`
 
 **发布：** 手动在 GitHub Actions 上触发 `Release` workflow 并填版本号，产出挂在 Release 上的 zip（手动加载安装，不上架商店）。版本号唯一来源是 `package.json`，`manifest.config.ts` 从中读取——不要在 manifest 里硬编码版本号。Release 的更新说明由 GitHub 按「上一个 tag 以来合并的 PR」自动汇总，**每个 PR 标题就是发布说明里的一行**，所以标题怎么写有硬性约定，见下方「工作约定」。细节见 `docs/superpowers/specs/2026-08-05-github-actions-release-design.md`。
 
@@ -144,6 +148,7 @@
 | 删除按 `note_id` 清全部痕迹 | 不要只删眼前这一份——同一篇存成多份本来就是要清理的异常，删一次只清一份等于让人重复劳动 |
 | 删除时先删指针、再删数据目录 | 不要反过来。中断后留孤儿目录是安全的（`quality.ts` 的 `no_pointer` 认得它），留孤儿指针会破坏「指针存在 ⟹ 数据完整」，污染所有人的查重 |
 | 浏览页是管理中心，页面组件拿完整 `Store` | 但 `src/core/browse/*` 仍只收 `ReadStore`，不要一起放宽——那些模块不写盘，收窄类型是免费的保证 |
+| 人工 Note 独立保存为可选 `annotation.txt`，属于文章 | 不要放进 `note.json`，不要按采集者拆分，也不要让重采自动覆盖 |
 
 ## 工作约定
 

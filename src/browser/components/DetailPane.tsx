@@ -8,6 +8,7 @@ import type { ArchivedAuthor, CommentRecord } from '../../types';
 import type { ThumbSize } from '../hooks/useThumbnail';
 import { DeleteBlock } from './DeleteBlock';
 import { Lightbox, type LightboxImage } from './Lightbox';
+import { AnnotationBlock } from './AnnotationBlock';
 
 function qualityText(q: QualityReport): { tone: string; text: string } | null {
   switch (q.state.kind) {
@@ -166,6 +167,8 @@ export function DetailPane({
   const [comments, setComments] = useState<CommentsResult>({ kind: 'none' });
   const [quality, setQuality] = useState<QualityReport | null>(null);
   const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number } | null>(null);
+  const [annotationSaving, setAnnotationSaving] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const key = noteKeyOf(noteRef);
   useEffect(() => {
@@ -184,7 +187,13 @@ export function DetailPane({
     <aside className="bw-detail">
       <div className="bw-detail-bar">
         <span className="bw-dim bw-detail-title">{meta.title || '（无标题）'}</span>
-        <DeleteBlock store={store} noteRef={noteRef} onDeleted={onDeleted} />
+        <DeleteBlock
+          store={store}
+          noteRef={noteRef}
+          disabled={annotationSaving}
+          onBusyChange={setDeleteBusy}
+          onDeleted={onDeleted}
+        />
         <button className="bw-btn" onClick={onClose}>✕</button>
       </div>
 
@@ -211,6 +220,14 @@ export function DetailPane({
         <h3>{meta.title || '（无标题）'}</h3>
         <p className="bw-content">{meta.content}</p>
         {meta.tags.length > 0 && <p className="bw-dim">{meta.tags.map((t) => `#${t}`).join(' ')}</p>}
+
+        <AnnotationBlock
+          key={key}
+          store={store}
+          noteRef={noteRef}
+          disabled={deleteBusy}
+          onSavingChange={setAnnotationSaving}
+        />
 
         <AuthorBlock author={detail.author} noteUrl={detail.url} shareUrl={detail.shareUrl} />
         <p>❤ {meta.liked} &nbsp; ⭐ {meta.collected} &nbsp; 💬 {meta.comment} &nbsp; ↗ {meta.share}</p>
