@@ -132,6 +132,17 @@ function noteViewProps(overrides: Record<string, unknown>) {
     message: null,
     justArchived: null,
     pageStep: null,
+    noteText: '',
+    noteSaved: '',
+    noteLoading: false,
+    noteSaving: false,
+    noteLoaded: true,
+    noteError: null,
+    noteNotice: null,
+    deleteBusy: false,
+    onNoteChange: vi.fn(),
+    onSaveNote: vi.fn(),
+    onCancelNote: vi.fn(),
     deletePlan: null,
     onOpenDelete: vi.fn(),
     onCancelDelete: vi.fn(),
@@ -170,6 +181,18 @@ describe('NoteView 里的删除入口', () => {
       progress: { done: 1, total: 3 },
     })));
     expect(html).not.toContain('删除这篇');
+  });
+
+  it('保存 Note 时禁用更新和删除', () => {
+    const html = renderToStaticMarkup(createElement(NoteView, noteViewProps({ noteSaving: true })));
+    expect(html).toContain('更新</button>');
+    expect((html.match(/disabled=""/g) ?? []).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('删除进行时禁用 Note 编辑和更新', () => {
+    const html = renderToStaticMarkup(createElement(NoteView, noteViewProps({ deleteBusy: true })));
+    expect(html).toContain('textarea');
+    expect((html.match(/disabled=""/g) ?? []).length).toBeGreaterThanOrEqual(3);
   });
 });
 

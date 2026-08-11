@@ -86,6 +86,17 @@
 
 .hint { margin: 5px 0 0; font-size: 11px; color: var(--ink-3); }
 
+.article-note { display: flex; flex-direction: column; gap: 6px; }
+.article-note textarea {
+  box-sizing: border-box; width: 100%; min-height: 88px; resize: vertical;
+  padding: 8px 9px; border: 1px solid var(--line-2); border-radius: 7px;
+  background: var(--sunk); color: var(--ink); font: 12px/1.55 inherit;
+}
+.article-note textarea:focus { outline: 2px solid var(--ink); outline-offset: -1px; border-color: transparent; }
+.article-note textarea:disabled { opacity: .6; cursor: default; }
+.article-note-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.article-note-actions .btn { width: auto; }
+
 /* ── 采集记录 ─────────────────────────────────────────── */
 .rec { border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; }
 .rec + .rec { margin-top: 5px; }

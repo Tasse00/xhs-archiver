@@ -25,6 +25,7 @@ import { LogView } from './components/LogView';
 import { IconRefresh, IconBrowse, IconGear } from './components/Icons';
 import { openBrowser } from './open-browser';
 import type { ArchiveMode } from './components/Actions';
+import { useArticleNote } from './useArticleNote';
 
 /** 重读的间隔，递增。用尽了才认定是真失败。 */
 const RETRY_DELAYS = [300, 700, 1500];
@@ -95,6 +96,7 @@ export function App() {
   // 删除确认块的内容。null 表示没打开——打开时才去读盘算计划。
   const [deletePlan, setDeletePlan] = useState<DeletePlan | null>(null);
   const [justDeleted, setJustDeleted] = useState<DeleteResult | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [log, setLog] = useState<LogEntry[]>([]);
   // 顶栏点「采集者」进来的改设置界面。null 表示没在改。
   const [editingCollector, setEditingCollector] = useState(false);
@@ -105,6 +107,12 @@ export function App() {
   const [captureShare, setCaptureShare] = useState(true);
   // 判定周期序号，用来作废被新触发取代的旧周期。见 refresh。
   const genRef = useRef(0);
+  const currentPlan = planOf(state);
+  const articleNote = useArticleNote(
+    store,
+    currentPlan?.note.noteId ?? null,
+    currentPlan?.existing?.path ?? null,
+  );
 
   const attachRoot = useCallback(async (handle: FileSystemDirectoryHandle) => {
     if (!(await ensurePermission(handle))) {
@@ -438,6 +446,7 @@ export function App() {
         mode,
         existing: plan.existing,
         supersede: plan.supersede,
+        noteText: articleNote.archiveValue,
         onProgress: (done, total) => setProgress({ done, total }),
       });
     } catch (e) {
@@ -453,6 +462,7 @@ export function App() {
       return;
     }
     setProgress(null);
+    if (res.status === 'complete') articleNote.markArchived(res.path);
     // 路径由上面那个 effect 负责持久化，这里不再重复存一次。
     // 必须先 refresh 再记结果：refresh 会清空「本次」标记。
     await refresh();
@@ -480,6 +490,20 @@ export function App() {
     }
   }
 
+  async function saveCurrentNote() {
+    if (!root || !store) return;
+    if (!(await ensurePermission(root))) {
+      setMessage('目录授权已失效，Note 没有保存。请重新授权后再试。');
+      return;
+    }
+    if (!(await rootExists(root))) {
+      setMessage('数据仓库目录已不存在，Note 没有保存。');
+      setState({ kind: 'missing_root' });
+      return;
+    }
+    await articleNote.save();
+  }
+
   async function confirmDelete() {
     if (!store || !root || !deletePlan) return;
     // 点确认本身就是用户手势，权限刚被回收时点一次「允许」就能继续。
@@ -490,6 +514,7 @@ export function App() {
     }
     const plan = deletePlan;
     let res: DeleteResult;
+    setDeleteBusy(true);
     try {
       res = await deleteNote(store, plan);
     } catch (e) {
@@ -501,6 +526,8 @@ export function App() {
       // 顺序保证了残留只会是孤儿目录，所以这句话永远成立
       setMessage(`删除失败：${e instanceof Error ? e.message : String(e)}。索引指针可能已删除，数据目录可能有残留。`);
       return;
+    } finally {
+      setDeleteBusy(false);
     }
     // 必须先 refresh 再记结果：refresh 会清空「本次」标记
     await refresh();
@@ -542,7 +569,7 @@ export function App() {
             <IconBrowse />
           </button>
         )}
-        <button className="icon-btn" title="重新读取页面" onClick={() => void refresh()}>
+        <button className="icon-btn" title="重新读取页面" onClick={() => { articleNote.reload(); void refresh(); }}>
           <IconRefresh />
         </button>
       </header>
@@ -598,6 +625,17 @@ export function App() {
           message={message}
           justArchived={justArchived}
           pageStep={pageStep}
+          noteText={articleNote.value}
+          noteSaved={articleNote.saved}
+          noteLoading={articleNote.loading}
+          noteSaving={articleNote.saving}
+          noteLoaded={articleNote.loaded}
+          noteError={articleNote.error}
+          noteNotice={articleNote.notice}
+          deleteBusy={deleteBusy}
+          onNoteChange={articleNote.setValue}
+          onSaveNote={() => void saveCurrentNote()}
+          onCancelNote={articleNote.cancel}
           deletePlan={deletePlan}
           onOpenDelete={() => void openDelete()}
           onCancelDelete={() => setDeletePlan(null)}

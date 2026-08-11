@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 
-import { afterEach, describe, expect, it } from 'vitest';
-import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createElement } from 'react';
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { createStore, type Store } from '../../src/core/store';
 import { memRoot } from '../helpers/memory-fs';
 import { writeArticleNote } from '../../src/core/article-note';
 import { useArticleNote } from '../../src/sidepanel/useArticleNote';
+import { ArticleNoteEditor } from '../../src/sidepanel/components/ArticleNoteEditor';
 
 afterEach(cleanup);
 
@@ -111,5 +113,57 @@ describe('useArticleNote', () => {
     act(() => fresh.result.current.setValue('未提交草稿'));
     act(() => fresh.result.current.reload());
     expect(fresh.result.current.value).toBe('未提交草稿');
+  });
+});
+
+describe('ArticleNoteEditor', () => {
+  it('新文章只提示随采集保存，不显示独立保存按钮', () => {
+    render(createElement(ArticleNoteEditor, {
+      archived: false, value: '', saved: '', loading: false, saving: false,
+      loaded: true, disabled: false, error: null, notice: null,
+      onChange: vi.fn(), onSave: vi.fn(), onCancel: vi.fn(),
+    }));
+    expect(screen.getByText('将在采集文章时一并保存')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '保存修改' })).toBeNull();
+  });
+
+  it('已归档文章修改后可以保存或取消', () => {
+    const onChange = vi.fn();
+    const onSave = vi.fn();
+    const onCancel = vi.fn();
+    render(createElement(ArticleNoteEditor, {
+      archived: true, value: '改后', saved: '改前', loading: false, saving: false,
+      loaded: true, disabled: false, error: null, notice: null, onChange, onSave, onCancel,
+    }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Note（可选）' }), { target: { value: '继续改' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    expect(onChange).toHaveBeenCalledWith('继续改');
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('加载和保存期间禁用输入，错误内容可见', () => {
+    const { rerender } = render(createElement(ArticleNoteEditor, {
+      archived: true, value: '', saved: '', loading: true, saving: false,
+      loaded: false, disabled: false, error: null, notice: null,
+      onChange: vi.fn(), onSave: vi.fn(), onCancel: vi.fn(),
+    }));
+    expect(screen.getByRole('textbox').hasAttribute('disabled')).toBe(true);
+    rerender(createElement(ArticleNoteEditor, {
+      archived: true, value: '不能丢', saved: '', loading: false, saving: false, disabled: false,
+      loaded: true, error: 'save boom', notice: null, onChange: vi.fn(), onSave: vi.fn(), onCancel: vi.fn(),
+    }));
+    expect(screen.getByText(/save boom/)).toBeTruthy();
+    expect(screen.getByDisplayValue('不能丢')).toBeTruthy();
+  });
+
+  it('保存成功给出轻量反馈，外部写入时禁用编辑', () => {
+    render(createElement(ArticleNoteEditor, {
+      archived: true, value: '已存', saved: '已存', loading: false, saving: false, disabled: true,
+      loaded: true, error: null, notice: 'Note 已保存', onChange: vi.fn(), onSave: vi.fn(), onCancel: vi.fn(),
+    }));
+    expect(screen.getByText('Note 已保存')).toBeTruthy();
+    expect(screen.getByRole('textbox').hasAttribute('disabled')).toBe(true);
   });
 });

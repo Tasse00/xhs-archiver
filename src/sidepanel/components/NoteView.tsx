@@ -9,6 +9,7 @@ import { Empty } from './Empty';
 import { NoteCard } from './NoteCard';
 import { Record } from './Record';
 import { ArchiveActions, DeleteAction, PathDisplay, type ArchiveMode } from './Actions';
+import { ArticleNoteEditor } from './ArticleNoteEditor';
 import {
   IconCheck, IconCross, IconDoc, IconGlobe, IconLoading, IconPlug, IconVideo,
 } from './Icons';
@@ -215,7 +216,8 @@ export function DeleteResultCard({ result }: { result: DeleteResult }) {
 
 export function NoteView({
   state, collector, datasetPath, onEditDatasetPath, onArchive, progress, message, justArchived, pageStep,
-  deletePlan, onOpenDelete, onCancelDelete, onConfirmDelete, justDeleted,
+  noteText, noteSaved, noteLoading, noteSaving, noteLoaded, noteError, noteNotice, deleteBusy,
+  onNoteChange, onSaveNote, onCancelNote, deletePlan, onOpenDelete, onCancelDelete, onConfirmDelete, justDeleted,
 }: {
   state: PanelState;
   collector: string;
@@ -227,6 +229,17 @@ export function NoteView({
   justArchived: ArchiveOutcome | null;
   /** 正在做哪一步页面交互。null 表示没在做。 */
   pageStep: 'author' | 'share' | null;
+  noteText: string;
+  noteSaved: string;
+  noteLoading: boolean;
+  noteSaving: boolean;
+  noteLoaded: boolean;
+  noteError: string | null;
+  noteNotice: string | null;
+  deleteBusy: boolean;
+  onNoteChange(value: string): void;
+  onSaveNote(): void;
+  onCancelNote(): void;
   /** 删除确认块的内容。null 表示确认块没打开。 */
   deletePlan: DeletePlan | null;
   onOpenDelete(): void;
@@ -309,6 +322,24 @@ export function NoteView({
   const a = archivable(state);
   if (!a) return idle(<div className="pt-body" />);
 
+  const noteEditor = (
+    <ArticleNoteEditor
+      archived={a.existing !== null}
+      value={noteText}
+      saved={noteSaved}
+      loading={noteLoading}
+      saving={noteSaving}
+      loaded={noteLoaded}
+      disabled={progress !== null || pageStep !== null || deleteBusy}
+      error={noteError}
+      notice={noteNotice}
+      onChange={onNoteChange}
+      onSave={onSaveNote}
+      onCancel={onCancelNote}
+    />
+  );
+  const noteBusy = noteLoading || noteSaving || deleteBusy;
+
   // 刚删完，状态已经回到「可采集」。先说结果，否则界面看起来像什么都没发生
   if (justDeleted) {
     return idle(
@@ -316,6 +347,7 @@ export function NoteView({
         <DeleteResultCard result={justDeleted} />
         <p className="hint">切换到别的笔记后这条提示会消失。</p>
         <NoteCard note={a.note} comments={a.comments} />
+        {noteEditor}
       </div>,
     );
   }
@@ -334,6 +366,7 @@ export function NoteView({
         )}
         <p className="hint">切换到别的笔记后这条提示会消失。</p>
         <NoteCard note={a.note} comments={a.comments} />
+        {noteEditor}
       </div>,
     );
   }
@@ -354,6 +387,7 @@ export function NoteView({
           <Verdict state={state} sameDir={sameDir} />
         )}
         <NoteCard note={a.note} comments={a.comments} />
+        {noteEditor}
 
         {a.existing && (
           <div>
@@ -399,14 +433,14 @@ export function NoteView({
               existing={a.existing}
               datasetPath={datasetPath}
               collector={collector}
-              busy={false}
+              busy={noteBusy}
               onArchive={onArchive}
             />
             {/* 只在有指针时出现：没人采过的笔记没什么可删 */}
             {a.existing && (
               <DeleteAction
                 plan={deletePlan}
-                busy={false}
+                busy={noteBusy}
                 onOpen={onOpenDelete}
                 onCancel={onCancelDelete}
                 onConfirm={onConfirmDelete}
